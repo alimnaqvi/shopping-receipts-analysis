@@ -271,7 +271,7 @@ function exportReceiptCsv() {
   const anchor = document.createElement('a')
   const store = form.location.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'receipt'
   anchor.href = url
-  anchor.download = `receipt-box-${form.purchasedOn}-${store}.csv`
+  anchor.download = `shopping-receipts-analysis-${form.purchasedOn}-${store}.csv`
   anchor.click()
   URL.revokeObjectURL(url)
 }

@@ -1,24 +1,26 @@
-# Receipt Box
+# Shopping Receipt Analysis
 
-[![Docker Image](https://img.shields.io/badge/ghcr.io-receipt--box-blue?logo=docker)](https://ghcr.io/davidski/receipt-box)
+A private, self-hosted app for analyzing grocery receipts, normalizing prices,
+and comparing distinct products within a family.
 
-Receipt Box is a self-hosted receipt tracker designed for quick browser
-entry. It turns grocery receipts into searchable purchase history,
-normalized price comparisons, and data highlights.
+This project is a fork of [Receipt Box](https://github.com/davidski/receipt-box).
+It retains the upstream MIT license and receipt-entry foundation, with substantial
+changes for multimodal receipt extraction, German-to-English product identity,
+product families, and purchase-level metadata.
 
 ## Disclaimer
 
-Receipt Box is a personal project, developed with AI assistance. Review the
-code, configuration, security assumptions, and have a backup plan before
+Shopping Receipt Analysis is a personal project, developed with AI assistance.
+Review the code, configuration, security assumptions, and have a backup plan before
 relying on it.
 
 ## License
 
-Receipt Box is licensed under the [MIT License](LICENSE).
+Shopping Receipt Analysis is licensed under the [MIT License](LICENSE).
 
 ## Overview
 
-Receipt Box is a self-hosted web app with a browser interface and an
+Shopping Receipt Analysis is a self-hosted web app with a browser interface and an
 application server. The app server stores receipt data in a PostgreSQL
 database. The included local Docker Compose setup runs the app server and
 database server in separate containers; you can also connect the app to an
@@ -87,7 +89,7 @@ Exact source hashes avoid extracting the same upload twice, including PDF page
 identity. Hashes do not recognize rescans or different photos. Review also warns
 about same-day same-store receipts and normalized item-name overlap in saved receipts
 and pending drafts. This is a warning heuristic, not reliable product identification.
-Receipt Box groups purchases by **store and date**; explicitly approving a same-store,
+Shopping Receipt Analysis groups purchases by **store and date**; explicitly approving a same-store,
 same-day receipt appends its lines to the existing receipt. Approval is transactional
 and repeat-safe, and stale draft edits are rejected rather than overwriting corrections.
 
@@ -152,7 +154,7 @@ The provider receives the uploaded receipt content. Immediate calls set `store: 
 this is not a promise of zero provider retention. Batch input files expire after two
 days; OpenAI applies its own retention rules to results and other API data. Review
 [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data) before
-uploading sensitive receipts. Authentication is shared with the rest of Receipt Box;
+uploading sensitive receipts. Authentication is shared with the rest of Shopping Receipt Analysis;
 do not expose an unauthenticated instance, especially one with a paid API key.
 
 `ReceiptExtractor` is the provider boundary. Only OpenAI is implemented; model and
@@ -212,41 +214,155 @@ Open `http://localhost:3000`.
 
 ## Deployment
 
-Use the repository's `compose.yaml` to run the app server and PostgreSQL
-database together. It publishes both services on loopback by default; see
-[Reverse proxy](#reverse-proxy) to route public traffic to the app.
+### Recommendation: Cloud Run + Neon
 
-> **Security note:** Authentication is disabled by default. Do not expose an
-> unauthenticated deployment directly to the public internet. Use the
-> optional OIDC mode described below, a private network, a VPN, or authentication
-> at the reverse proxy.
+For a small private deployment, I recommend the existing Docker image on **Google
+Cloud Run** with **Neon Postgres**:
 
-### Optional OIDC authentication
+- Cloud Run supports this container directly, scales to zero, and has a usage-based
+  free tier. Start with request-based billing, zero minimum instances, and a small
+  maximum instance count; check the [current pricing](https://cloud.google.com/run/pricing)
+  for the region you choose.
+- Neon is managed Postgres with automatic scale-to-zero. Its Free plan currently
+  includes 1 GB of Postgres storage per project and 100 compute-hours/month; those
+  limits can suspend writes or compute when exhausted. For a real archive of scans,
+  monitor storage and arrange backups. The usage-based Launch plan has no monthly
+  minimum and offers longer restore history and scheduled snapshots. See
+  [Neon plans](https://neon.com/docs/introduction/plans).
+- Choose Cloud Run and Neon regions close to each other and the users. The services
+  are in different clouds, so database traffic uses their public endpoints and adds
+  some network latency/egress. Use Neon's pooled Postgres URL and set a conservative
+  Cloud Run maximum instance count to avoid exhausting database connections.
+- The app stores original receipt pages in PostgreSQL, not the container filesystem.
+  Cloud Run's filesystem is ephemeral, but it does not currently hold durable app data.
+  Google Cloud Storage is optional today; integrating it for receipts or backups would
+  require a deliberate storage/backup workflow. Do not copy scans into an unencrypted,
+  publicly readable bucket.
+- The Docker image listens on port `3000`; set the Cloud Run container port to `3000`.
+	Set **minimum instances to zero**, a small maximum (for example, `2`), and
+	request-based billing to keep an occasional personal app economical. Allow public
+	invocation at the Cloud Run IAM layer because browsers must reach Google sign-in;
+	the app then authenticates its data APIs with OIDC. Keep the Cloud Run service
+	identity least-privileged and use Secret Manager for all credentials.
 
-While not enabled by default, an OIDC provider such as [Pocket ID](https://pocket-id.org/) can be used to auth users.
+Cloud SQL Postgres keeps compute and the app in one cloud and can provide private
+networking, but the database instance has an ongoing hourly cost even while the app
+scales to zero. Compare the regional [Cloud SQL pricing](https://cloud.google.com/sql/pricing)
+with Neon before choosing it. Google's pricing page currently lists a US-central
+shared-core `db-f1-micro` at about $0.0105/hour for compute alone; storage, backups,
+networking, and regional prices are additional, and that shared-core tier has no SLA.
 
-A user-set `NUXT_SESSION_PASSWORD` is used to seal Receipt Box's
-session cookies. This can be generated with `openssl rand -base64 48`, after which it
-should be treated as a secret.
+**Vercel + Neon** is also possible, but not with the current upload path unchanged.
+Vercel Functions currently cap request and response bodies at **4.5 MB**, while this
+app accepts files up to **20 MiB**. Most larger scans would fail before reaching the
+upload handler. To use Vercel, either limit all accepted uploads to less than the
+platform cap, or first implement direct-to-object-storage uploads and downloads
+(for example, signed Cloud Storage or Vercel Blob URLs) and store object references
+rather than sending receipt contents through function request/response bodies.
+Vercel's function filesystem is read-only apart
+from temporary scratch space, but this app already stores originals in Postgres.
+See [Vercel Function limits](https://vercel.com/docs/functions/limitations) and
+[runtime filesystem behavior](https://vercel.com/docs/functions/runtimes#file-system-support).
 
-Assign the command's output to `NUXT_SESSION_PASSWORD` in `.env`, then set the
-OIDC variables on the application container:
+### Google OIDC setup
 
-```dotenv
-AUTH_MODE=oidc
-NUXT_SESSION_PASSWORD=replace-with-at-least-32-random-characters
-NUXT_OAUTH_OIDC_CLIENT_ID=receipt-box
-NUXT_OAUTH_OIDC_CLIENT_SECRET=replace-with-the-oidc-client-secret
-NUXT_OAUTH_OIDC_OPENID_CONFIG=https://auth.example.com/application/o/receipt-box/.well-known/openid-configuration
-NUXT_OAUTH_OIDC_REDIRECT_URL=https://receiptbox.example.com/receipt-box/auth/oidc
-```
+The app uses OIDC to sign users in; it does **not** use Google Cloud IAM to authorize
+each app request. The Cloud Run service itself must accept public HTTP requests so a
+browser can reach the login page and OIDC callback. Set Cloud Run to allow public
+invocation, then let the app's OIDC middleware protect its data APIs. Do not select
+Cloud Run "Require authentication" / IAM-only access for this setup; that would block
+the browser before app sign-in. HTTPS is terminated by Cloud Run.
 
-Register the exact redirect URL with the OIDC provider. Receipt Box requests
-the `openid`, `profile`, and `email` scopes.
+For a personal or household app, Google's **External / Testing** audience is a simple
+way to restrict sign-in to specific Google accounts without publishing the OAuth app:
 
-When OIDC mode is enabled, all Receipt Box data API routes require auth. The
-OIDC callback, session-management endpoint, authentication-status endpoint,
-and `/api/health` remain unauthenticated.
+1. Choose the permanent production URL first: preferably a custom HTTPS domain, or
+	the stable Cloud Run service URL. Preview URLs are not a good OAuth callback target.
+2. In [Google Auth Platform](https://console.cloud.google.com/auth/overview), create
+	or select a project. Configure the app name and support email. Set the audience
+	to **External** (personal Google accounts are not in a Google Workspace
+	organization). Leave publishing status at **Testing** and add your own Google
+	account and your partner's account as test users. Testing mode restricts who can
+	authorize the app; Google can show an unverified-app warning. Google documents a
+	lifetime 100-user cap for unapproved sensitive/restricted scopes. This app requests
+	only `openid`, `profile`, and `email`, not Gmail/Drive access. The app does not
+	request offline access or Google API refresh tokens.
+3. Under **Clients**, create an OAuth client of type **Web application**. Register
+	this exact authorized redirect URI, substituting your production host:
+	`https://YOUR_HOST/auth/oidc`
+	For a path-prefixed app, include the prefix, for example
+	`https://YOUR_HOST/shopping-receipts-analysis/auth/oidc`. Scheme, host, path,
+	and trailing slash must match exactly. A JavaScript origin is not used by this
+	server-side callback; add `https://YOUR_HOST` only if the console requires it.
+4. Copy the client ID and client secret when Google creates them. Google only shows
+	a new client secret once; save it directly into your deployment's secret manager,
+	never into Git or a browser-visible variable.
+5. Set these **runtime** environment variables on the app service:
+
+	```dotenv
+	AUTH_MODE=oidc
+	NUXT_SESSION_PASSWORD=<random secret of at least 32 characters>
+	NUXT_OAUTH_OIDC_CLIENT_ID=<Google client ID>
+	NUXT_OAUTH_OIDC_CLIENT_SECRET=<Google client secret>
+	NUXT_OAUTH_OIDC_OPENID_CONFIG=https://accounts.google.com/.well-known/openid-configuration
+	NUXT_OAUTH_OIDC_REDIRECT_URL=https://YOUR_HOST/auth/oidc
+	```
+
+	Generate the session secret locally with `openssl rand -base64 48`. Use the
+	path-prefixed callback URL in both Google and the environment if applicable.
+	Keep the same session password across all instances and normal deployments;
+	rotating it signs out existing sessions. For Cloud Run, put the session password,
+	client secret, database URL, and OpenAI key in Secret Manager and grant the
+	service identity access only to those secrets.
+6. Redeploy and test sign-in and sign-out with **both** accounts. Also verify that
+	opening a data API while signed out returns an authentication error. Configure
+	cost alerts and a database backup before importing the full receipt archive.
+
+If you later switch the OAuth app from Testing to Production, external Google
+accounts can generally authorize it. Production app branding may require a verified
+domain, a public app home page and privacy policy, and Google brand verification.
+That is unnecessary for a couple of known household users in Testing mode.
+
+### Cloud Run deployment outline
+
+1. Enable Cloud Run, Artifact Registry, and Secret Manager in your Google Cloud project.
+	Build the existing [Dockerfile](Dockerfile) and push its image to Artifact Registry.
+2. Create a Cloud Run service in a European region near the Neon database. Set its
+	container port to `3000`, request-based billing, minimum instances `0`, and a
+	conservative maximum. Allow public invocation at the platform layer as described
+	above; do not put the Google OIDC callback behind Cloud Run IAM authentication.
+3. Create a Neon Postgres project in a nearby region. Put its TLS connection URL in
+	Secret Manager. Prefer Neon's pooled connection URL, and configure spend alerts
+	on a paid plan. The receipt scans are stored in Postgres too, so watch the database
+	storage quota and include scans in your backup plan.
+4. Add `OPENAI_API_KEY`, `NUXT_SESSION_PASSWORD`, `NUXT_OAUTH_OIDC_CLIENT_SECRET`,
+	and `DATABASE_URL` as Secret Manager references on Cloud Run. Set `AUTH_MODE=oidc`,
+	`RECEIPT_AI_PROVIDER=openai`, `NUXT_OAUTH_OIDC_CLIENT_ID`,
+	`NUXT_OAUTH_OIDC_OPENID_CONFIG`, and the exact callback URL as runtime environment
+	variables. Grant the Cloud Run service identity access only to the four secrets.
+5. After the first deploy, copy the stable `run.app` service URL (or bind your custom
+	domain), add `https://HOST/auth/oidc` as an authorized redirect URI in Google, then
+	set the same URL as `NUXT_OAUTH_OIDC_REDIRECT_URL` and deploy a new revision.
+	If you know your custom domain beforehand, register that callback before deploying.
+6. Confirm signed-out API calls are rejected, sign in with each household test account,
+	upload a scan larger than 4.5 MB, and verify that the original image/PDF is still
+	available after a new revision. Create and test a database backup before importing
+	the full archive.
+
+### One deployment or two?
+
+OIDC answers **who signed in**; the app currently does not partition receipts by
+user. All authenticated accounts on a deployment can read, change, export, and delete
+the same receipt history and uploaded scans. Only the backfill-prompt preference is
+per-user. Google Testing users are allowed into the deployment, not into separate
+private datasets. There is no app-level email allowlist or household role model.
+
+For you and your partner to manage one shared household history, use **one deployment**
+and add both accounts as test users. For private, independent histories, use **two
+deployments with two separate databases** (and separate storage/credentials); setting
+two app URLs against one database would not isolate the data. Adding true per-user
+isolation to one deployment would require a data-model and authorization migration,
+not just another OIDC setting.
 
 ## Configuration
 
@@ -277,30 +393,30 @@ your reverse proxy to forward public requests to that address. If the proxy
 runs in another container, connect it to a Docker network shared with the app
 and forward requests to the app service on port `3000`.
 
-For a deployment under a path prefix such as `/receipt-box/`, build the app
+For a deployment under a path prefix such as `/shopping-receipts-analysis/`, build the app
 with matching public URL settings:
 
 ```dotenv
-NUXT_APP_BASE_URL=/receipt-box/
-NUXT_PUBLIC_API_BASE=/receipt-box/api
+NUXT_APP_BASE_URL=/shopping-receipts-analysis/
+NUXT_PUBLIC_API_BASE=/shopping-receipts-analysis/api
 ```
 
 These public URL settings are embedded in the app image at build time. Rebuild
 the image after changing either setting.
 
-Configure the proxy to forward the `/receipt-box/` path to the app without
+Configure the proxy to forward the `/shopping-receipts-analysis/` path to the app without
 stripping the prefix. If `NUXT_PUBLIC_API_BASE` is omitted, it defaults to the
 API path under `NUXT_APP_BASE_URL`.
 
 If the reverse proxy exposes the API at the origin root, use:
 
 ```dotenv
-NUXT_APP_BASE_URL=/receipt-box/
+NUXT_APP_BASE_URL=/shopping-receipts-analysis/
 NUXT_PUBLIC_API_BASE=/api
 ```
 
 In this setup, configure the proxy to forward public `/api/*` requests to the
-app's `/receipt-box/api/*` path. To use another API origin, provide a full URL
+app's `/shopping-receipts-analysis/api/*` path. To use another API origin, provide a full URL
 and allow the app origin in that API's CORS policy.
 
 ## Export and backup

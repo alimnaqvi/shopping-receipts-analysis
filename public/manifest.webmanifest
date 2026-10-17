@@ -1,7 +1,7 @@
 {
-  "name": "Receipt Box",
-  "short_name": "Receipt Box",
-  "description": "A private receipt tracker with grocery price history.",
+  "name": "Shopping Receipt Analysis",
+  "short_name": "Shopping Receipts",
+  "description": "Private grocery receipt analysis and normalized product price history.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

@@ -341,7 +341,7 @@ function unitCurrency(value: number) {
         {{ coverageText }}
       </p>
 
-      <section class="highlight-stats mb-5 grid grid-cols-[repeat(3,1fr)] gap-3.5 max-[900.01px]:grid-cols-3 max-[640.01px]:grid-cols-2" aria-label="Receipt Box summary">
+      <section class="highlight-stats mb-5 grid grid-cols-[repeat(3,1fr)] gap-3.5 max-[900.01px]:grid-cols-3 max-[640.01px]:grid-cols-2" aria-label="Shopping Receipt Analysis summary">
         <UCard class="stat-card"><UIcon name="i-lucide-receipt-text" /><strong>{{ data.summary.receipts.toLocaleString() }}</strong><span>receipts</span></UCard>
         <UCard class="stat-card"><UIcon name="i-lucide-shopping-basket" /><strong>{{ data.summary.items.toLocaleString() }}</strong><span>unique items</span></UCard>
         <UCard class="stat-card"><UIcon name="i-lucide-euro" /><strong>{{ wholeNumber(monthlySpendTotal) }}</strong><span>total spend</span></UCard>

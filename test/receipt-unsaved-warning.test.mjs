@@ -252,7 +252,7 @@ test('a saved receipt can be exported for CSV reimport', () => {
   assert.match(form, /@click="exportReceiptCsv"/)
   assert.match(form, /const rows = completeLines\.value\.map/)
   assert.match(form, /entryCsv\(rows\)/)
-  assert.match(form, /receipt-box-\$\{form\.purchasedOn\}-\$\{store\}\.csv/)
+  assert.match(form, /shopping-receipts-analysis-\$\{form\.purchasedOn\}-\$\{store\}\.csv/)
 })
 
 test('receipt totals stay visible without clipping the item selector', () => {

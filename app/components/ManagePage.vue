@@ -634,7 +634,7 @@ async function fetchAllEntries() {
   return entries.reverse()
 }
 
-function download(blob: Blob, extension: string, basename = `receipt-box-${new Date().toISOString().slice(0, 10)}`) {
+function download(blob: Blob, extension: string, basename = `shopping-receipts-analysis-${new Date().toISOString().slice(0, 10)}`) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
@@ -644,7 +644,7 @@ function download(blob: Blob, extension: string, basename = `receipt-box-${new D
 }
 
 function downloadCsvTemplate() {
-  download(new Blob([entryCsv([])], { type: 'text/csv;charset=utf-8' }), 'csv', 'receipt-box-template')
+  download(new Blob([entryCsv([])], { type: 'text/csv;charset=utf-8' }), 'csv', 'shopping-receipts-analysis-template')
 }
 
 async function exportCsv() {
@@ -668,7 +668,7 @@ async function exportXlsx() {
     const entries = await fetchAllEntries()
     const { default: ExcelJS } = await import('exceljs')
     const workbook = new ExcelJS.Workbook()
-    workbook.creator = 'Receipt Box'
+    workbook.creator = 'Shopping Receipt Analysis'
     const sheet = workbook.addWorksheet('Purchases', { views: [{ state: 'frozen', ySplit: 1 }] })
     sheet.addRow(entryExportHeaders)
     for (const entry of entries) {
@@ -698,10 +698,10 @@ async function exportXlsx() {
 <template>
   <div class="mx-auto w-full max-w-300">
     <header class="page-heading my-[15px] mb-8">
-      <h1 class="leading-[1.04] text-[clamp(34px,3.5vw,42px)]">Manage Receipt Box</h1>
+      <h1 class="leading-[1.04] text-[clamp(34px,3.5vw,42px)]">Manage Shopping Receipt Analysis</h1>
     </header>
 
-    <nav class="manage-sections inline-flex gap-[5px] rounded-[14px] p-[5px] shadow-(--shadow) [background:var(--surface)] [border:1px_solid_var(--line)] max-[640.01px]:grid max-[640.01px]:grid-cols-1 max-[640.01px]:w-full" aria-label="Receipt Box management sections">
+    <nav class="manage-sections inline-flex gap-[5px] rounded-[14px] p-[5px] shadow-(--shadow) [background:var(--surface)] [border:1px_solid_var(--line)] max-[640.01px]:grid max-[640.01px]:grid-cols-1 max-[640.01px]:w-full" aria-label="Shopping Receipt Analysis management sections">
       <UButton
         to="/data/stores"
         label="Stores"
@@ -1058,7 +1058,7 @@ async function exportXlsx() {
           <h2 class="text-[26px]">Reset database</h2>
           <p class="max-w-[620px] text-(--muted) leading-[1.55]">Delete every receipt, purchase entry, and store so you can start with a fresh database. This cannot be undone.</p>
 
-          <UAlert v-if="resetComplete" color="success" variant="soft" icon="i-lucide-circle-check" description="The database was reset. Receipt Box is ready for fresh data." class="notice m-[15px_0_0] rounded-[10px] p-[11px_13px] text-sm" />
+          <UAlert v-if="resetComplete" color="success" variant="soft" icon="i-lucide-circle-check" description="The database was reset. Shopping Receipt Analysis is ready for fresh data." class="notice m-[15px_0_0] rounded-[10px] p-[11px_13px] text-sm" />
           <UAlert v-if="resetError" color="error" variant="soft" icon="i-lucide-circle-alert" :description="resetError" class="notice m-[15px_0_0] rounded-[10px] p-[11px_13px] text-sm" />
 
           <div v-if="resetConfirming" class="reset-confirmation mt-5 max-w-130 rounded-[14px] p-4.5 [background:var(--danger-soft)] [border:1px_solid_color-mix(in_srgb,var(--danger),transparent_45%)]">

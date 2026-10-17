@@ -26,7 +26,7 @@ test('History keeps its page heading stable across views', () => {
   assert.match(page, /Receipt date, store, and total/)
   assert.equal((page.match(/aria-label="Receipt list pagination"/g) || []).length, 2)
   assert.doesNotMatch(page, /view === 'receipts' \? 'Shopping trips'/)
-  assert.doesNotMatch(page, /The full Receipt Box/)
+  assert.doesNotMatch(page, /The full Shopping Receipt Analysis/)
 })
 
 test('Purchase editor uses consistent spacing between form rows', () => {

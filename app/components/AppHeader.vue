@@ -25,9 +25,9 @@ async function logout() {
 
 <template>
   <header class="app-header sticky top-0 z-30 grid min-h-19 grid-cols-[1fr_auto_1fr] items-center p-[10px_max(24px,env(safe-area-inset-left))] backdrop-blur-[18px] [background:color-mix(in_srgb,var(--bg),transparent_7%)] [border-bottom:1px_solid_color-mix(in_srgb,var(--line),transparent_15%)] max-[900.01px]:grid-cols-[minmax(0,_1fr)_auto] max-[900.01px]:min-h-[70px] max-[640.01px]:grid-cols-[1fr_auto] max-[640.01px]:px-[16px]">
-    <NuxtLink to="/" class="brand inline-flex w-max items-center gap-2.5 no-underline" aria-label="Receipt Box home">
+    <NuxtLink to="/" class="brand inline-flex w-max items-center gap-2.5 no-underline" aria-label="Shopping Receipt Analysis home">
       <img :src="brandIconURL" class="block size-[42px] max-[640.01px]:w-[39px] max-[640.01px]:h-[39px]" alt="" width="42" height="42">
-      <strong class="[font-family:var(--font-display)] text-[20px] font-[600] leading-[1] tracking-[-.015em]">Receipt Box</strong>
+      <strong class="[font-family:var(--font-display)] text-[20px] font-[600] leading-[1] tracking-[-.015em]">Shopping Receipts</strong>
     </NuxtLink>
 
     <nav class="flex gap-[5px] rounded-full p-[5px] [background:var(--surface)] [border:1px_solid_var(--line)] max-[900.01px]:hidden" aria-label="Main navigation">

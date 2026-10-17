@@ -25,9 +25,9 @@ export default defineNuxtConfig({
     // Static client asset and router URLs are fixed when the app is built.
     baseURL: appBaseURL,
     head: {
-      title: 'Receipt Box',
+      title: 'Shopping Receipt Analysis',
       meta: [
-        { name: 'description', content: 'A private receipt tracker with grocery price history.' },
+        { name: 'description', content: 'Private grocery receipt analysis and normalized product price history.' },
         { name: 'theme-color', media: '(prefers-color-scheme: light)', content: '#f4f0e6' },
         { name: 'theme-color', media: '(prefers-color-scheme: dark)', content: '#111512' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
@@ -48,7 +48,7 @@ export default defineNuxtConfig({
     // Kept empty in the build; server/utils/db.ts reads DATABASE_URL at runtime.
     databaseUrl: '',
     public: {
-      appName: 'Receipt Box',
+      appName: 'Shopping Receipt Analysis',
       // Browser-visible and therefore also embedded in the static client build.
       apiBase
     }

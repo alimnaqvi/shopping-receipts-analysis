@@ -24,7 +24,7 @@ services:
       args:
         NUXT_APP_BASE_URL: ${NUXT_APP_BASE_URL:-/}
         NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-}
-    image: receipt-box:local
+    image: shopping-receipts-analysis:local
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://receiptbox:local-receipt-box-only@postgres:5432/receiptbox

@@ -86,6 +86,27 @@ it('keeps missing prices blank, saves corrections without inserting purchases, t
   wrapper.unmount()
 })
 
+it('highlights confidence below the manual-review threshold only', async () => {
+  const reviewUpload = {
+    ...upload,
+    draft: {
+      ...receipt,
+      lines: [
+        { ...receipt.lines[0]!, confidence: 0.79 },
+        { ...receipt.lines[0]!, confidence: 0.8 }
+      ]
+    }
+  }
+  const wrapper = await mountSuspended(ReceiptUploadReview, { props: { upload: reviewUpload, duplicates: [], categories: [] }, global: { stubs } })
+  const confidence = wrapper.findAll('[data-line] > div > span > span')
+  expect(confidence).toHaveLength(2)
+  expect(confidence[0]!.text()).toBe('79% confidence')
+  expect(confidence[0]!.classes()).toContain('bg-amber-100')
+  expect(confidence[1]!.text()).toBe('80% confidence')
+  expect(confidence[1]!.classes()).not.toContain('bg-amber-100')
+  wrapper.unmount()
+})
+
 it('requires explicit duplicate override and clears confirmations when a correction changes', async () => {
   const wrapper = await mountSuspended(ReceiptUploadReview, { props: { upload, duplicates: [{ id: '7', source: 'receipt', location: 'Market', similarity: 1, sameStore: true }], categories: [] }, global: { stubs } })
   expect(wrapper.text()).toContain('append to this existing store/day receipt')

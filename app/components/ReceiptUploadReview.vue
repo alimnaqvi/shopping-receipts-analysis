@@ -141,7 +141,7 @@ async function save(approve: boolean) {
           <legend class="mb-2 font-semibold">Items <span class="text-(--muted)">({{ draft.lines.length }})</span></legend>
           <div v-for="(line, index) in draft.lines" :key="lineKeys[index]" class="grid min-w-0 gap-3 border-t border-(--line) py-4" :data-line="index">
             <div class="flex min-w-0 items-center justify-between gap-2">
-              <span class="text-sm font-semibold">{{ index + 1 }}<span v-if="line.confidence !== null" class="ml-2 font-normal text-(--muted)">{{ Math.round(line.confidence * 100) }}% confidence</span></span>
+              <span class="text-sm font-semibold">{{ index + 1 }}<span v-if="line.confidence !== null" class="ml-2" :class="line.confidence < 0.8 ? 'rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-200' : 'font-normal text-(--muted)'">{{ Math.round(line.confidence * 100) }}% confidence</span></span>
               <UTooltip text="Remove line"><UButton icon="i-lucide-trash-2" :aria-label="`Remove line ${index + 1}`" color="error" variant="ghost" :disabled="readOnly" @click="removeLine(index)" /></UTooltip>
             </div>
             <UFormField label="Product"><UInputMenu :model-value="line.item ?? ''" :items="productNames" mode="autocomplete" :create-item="{ when: 'always', position: 'top' }" :aria-label="`Product ${index + 1}`" class="w-full" @update:model-value="chooseProduct(line, $event)" @create="chooseProduct(line, $event)" /></UFormField>

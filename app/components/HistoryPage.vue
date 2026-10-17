@@ -370,6 +370,7 @@ async function confirmRemoveEntry() {
         <h1 class="leading-[1.04] text-[clamp(34px,3.5vw,42px)]">Receipts</h1>
         <p>{{ view === 'receipts' ? 'Browse receipts by date.' : 'Browse individual purchase entries.' }}</p>
         <UButton to="/receipts/upload" label="Upload receipts" icon="i-lucide-upload" color="neutral" variant="outline" class="mt-3" />
+        <UButton to="/items/families" label="Product families" icon="i-lucide-layers" color="neutral" variant="ghost" class="mt-3 ml-2" />
       </div>
       <nav class="receipt-mode-switcher receipt-views m-0 flex w-max shrink-0 items-center gap-[5px] rounded-[14px] p-1 [background:var(--surface)] [border:1px_solid_var(--line)] max-[900.01px]:w-full max-[900.01px]:mb-0 max-[640.01px]:w-full" aria-label="Receipts view">
         <UButton to="/" label="Calendar" icon="i-lucide-calendar-days" :color="historyView === 'receipts-calendar' ? 'primary' : 'neutral'" :variant="historyView === 'receipts-calendar' ? 'soft' : 'ghost'" :aria-current="historyView === 'receipts-calendar' ? 'page' : undefined" />

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import type postgres from 'postgres'
 import type { ExtractionInput, ReceiptExtractor } from './receipt-provider.ts'
 import { uploadError } from './receipt-upload-query.ts'
+import { itemCatalog, receiptItemCatalog } from './product-catalog.ts'
+import { applyCatalog } from '../../shared/utils/product-identity.ts'
 
 async function claimUploads(sql: postgres.Sql, ids: string[], model: string, token: string) {
   return sql.begin(async (tx) => {
@@ -43,10 +45,13 @@ export async function extractReceiptUpload(sql: postgres.Sql, id: string, provid
   const token = randomUUID()
   const [input] = await claimUploads(sql, [id], provider.model, token)
   try {
-    const extraction = await provider.extract(input!, await extractionCategories(sql))
+    const categories = await extractionCategories(sql)
+    const catalog = await itemCatalog(sql)
+    const extraction = await provider.extract(input!, categories, catalog)
+    const draft = applyCatalog(extraction, await receiptItemCatalog(sql, extraction, catalog))
     await sql`
       UPDATE grocery_receipt_uploads SET status = 'review', extraction = ${sql.json(extraction)},
-        draft = ${sql.json(extraction)}, revision = revision + 1, lease_token = NULL, updated_at = now()
+        draft = ${sql.json(draft)}, revision = revision + 1, lease_token = NULL, updated_at = now()
       WHERE id = ${id} AND lease_token = ${token} AND status = 'processing'
     `
     return { status: 'review' }
@@ -61,7 +66,8 @@ export async function submitReceiptBatch(sql: postgres.Sql, ids: string[], provi
   const token = randomUUID()
   const inputs = await claimUploads(sql, ids, provider.model, token)
   try {
-    const batchId = await provider.submitBatch(inputs, await extractionCategories(sql))
+    const categories = await extractionCategories(sql)
+    const batchId = await provider.submitBatch(inputs, categories, await itemCatalog(sql))
     await sql`
       UPDATE grocery_receipt_uploads SET status = 'batch', batch_id = ${batchId}, lease_token = NULL, updated_at = now()
       WHERE lease_token = ${token} AND status = 'processing'
@@ -82,15 +88,17 @@ export async function refreshReceiptBatch(sql: postgres.Sql, id: string, provide
   if (cancel) await provider.cancelBatch(id)
   const progress = await provider.pollBatch(id)
   if (!progress.terminal) return { status: progress.status, updated: 0 }
+  const catalog = await itemCatalog(sql)
   return sql.begin(async (tx) => {
     const results = new Map(progress.results.map(result => [result.id, result]))
     for (const row of rows) {
       const result = results.get(row.id)
       const extraction = result?.extraction ?? null
+      const draft = extraction ? applyCatalog(extraction, await receiptItemCatalog(tx, extraction, catalog)) : null
       const error = extraction ? null : result?.error ?? `No extraction returned (batch ${progress.status}). Retry this receipt individually.`
       await tx`
         UPDATE grocery_receipt_uploads SET status = ${extraction ? 'review' : 'failed'},
-          extraction = ${extraction ? tx.json(extraction) : null}, draft = ${extraction ? tx.json(extraction) : null}, error = ${error},
+          extraction = ${extraction ? tx.json(extraction) : null}, draft = ${draft ? tx.json(draft) : null}, error = ${error},
           revision = revision + 1, updated_at = now()
         WHERE id = ${row.id} AND batch_id = ${id} AND status = 'batch'
       `

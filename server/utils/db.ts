@@ -1,4 +1,5 @@
 import postgres from 'postgres'
+import type { ProductMetadata } from '../../shared/types/product'
 import { maxEntryNotesLength } from '../../shared/utils/entry-notes'
 import { normalizeUnit } from '../../shared/utils/units'
 import { normalizeStoreName, storeNameKey } from '../../shared/utils/store-name'
@@ -352,6 +353,18 @@ export async function migrate() {
     }
     await tx`CREATE INDEX IF NOT EXISTS grocery_entries_receipt_idx ON grocery_entries (receipt_id, id)`
     await tx`
+      ALTER TABLE grocery_entries
+        ADD COLUMN IF NOT EXISTS product_family TEXT,
+        ADD COLUMN IF NOT EXISTS brand TEXT,
+        ADD COLUMN IF NOT EXISTS variant TEXT,
+        ADD COLUMN IF NOT EXISTS raw_description TEXT,
+        ADD COLUMN IF NOT EXISTS quantity NUMERIC,
+        ADD COLUMN IF NOT EXISTS regular_price NUMERIC,
+        ADD COLUMN IF NOT EXISTS discount NUMERIC,
+        ADD COLUMN IF NOT EXISTS purchased_time TEXT,
+        ADD COLUMN IF NOT EXISTS source_upload_id UUID
+    `
+    await tx`
       CREATE OR REPLACE VIEW grocery_receipt_details AS
       SELECT receipts.id, receipts.purchased_on, stores.name AS location,
         receipts.created_at, receipts.updated_at
@@ -363,7 +376,9 @@ export async function migrate() {
       SELECT entries.id, entries.receipt_id, receipts.purchased_on,
         entries.item, stores.name AS location, entries.size, entries.unit,
         entries.price, entries.cost_per_unit, entries.sale_item, entries.non_grocery,
-        entries.notes, entries.created_at, entries.updated_at, categories.name AS category
+        entries.notes, entries.created_at, entries.updated_at, categories.name AS category,
+        entries.product_family, entries.brand, entries.variant, entries.raw_description,
+        entries.quantity, entries.regular_price, entries.discount, entries.purchased_time, entries.source_upload_id
       FROM grocery_entries entries
       INNER JOIN grocery_receipts receipts ON receipts.id = entries.receipt_id
       INNER JOIN grocery_stores stores ON stores.id = receipts.store_id
@@ -396,10 +411,49 @@ export async function migrate() {
     `
     await tx`CREATE INDEX IF NOT EXISTS grocery_receipt_uploads_queue_idx ON grocery_receipt_uploads (created_at DESC, id)`
     await tx`CREATE INDEX IF NOT EXISTS grocery_receipt_uploads_batch_idx ON grocery_receipt_uploads (batch_id) WHERE batch_id IS NOT NULL`
+    const [sourceForeignKey] = await tx<{ exists: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'grocery_entries_source_upload_id_fkey'
+        AND conrelid = 'grocery_entries'::regclass) AS exists
+    `
+    if (!sourceForeignKey?.exists) {
+      await tx`ALTER TABLE grocery_entries ADD CONSTRAINT grocery_entries_source_upload_id_fkey
+        FOREIGN KEY (source_upload_id) REFERENCES grocery_receipt_uploads(id) ON DELETE SET NULL`
+    }
+    await tx`
+      UPDATE grocery_entries entries SET
+        source_upload_id = uploads.id,
+        product_family = nullif(uploads.draft->'lines'->(reference.ordinality::int - 1)->>'family', ''),
+        brand = nullif(uploads.draft->'lines'->(reference.ordinality::int - 1)->>'brand', ''),
+        variant = nullif(uploads.draft->'lines'->(reference.ordinality::int - 1)->>'variant', ''),
+        raw_description = uploads.draft->'lines'->(reference.ordinality::int - 1)->>'rawDescription',
+        quantity = (uploads.draft->'lines'->(reference.ordinality::int - 1)->>'quantity')::numeric,
+        regular_price = (uploads.draft->'lines'->(reference.ordinality::int - 1)->>'regularPrice')::numeric,
+        discount = (uploads.draft->'lines'->(reference.ordinality::int - 1)->>'discount')::numeric,
+        purchased_time = CASE WHEN uploads.draft->>'purchasedTime' ~ '^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$'
+          THEN left(uploads.draft->>'purchasedTime', 5) ELSE NULL END
+      FROM grocery_receipt_uploads uploads,
+        LATERAL jsonb_array_elements_text(uploads.entry_ids) WITH ORDINALITY AS reference(entry_id, ordinality)
+      WHERE uploads.status = 'saved' AND reference.entry_id = entries.id::text AND entries.source_upload_id IS NULL
+    `
+    await tx`
+      CREATE TABLE IF NOT EXISTS grocery_item_aliases (
+        store_key TEXT NOT NULL,
+        raw_key TEXT NOT NULL,
+        item_key TEXT NOT NULL,
+        location TEXT NOT NULL,
+        raw_description TEXT NOT NULL,
+        item TEXT NOT NULL,
+        brand TEXT,
+        variant TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (store_key, raw_key, item_key)
+      )
+    `
+    await tx`CREATE INDEX IF NOT EXISTS grocery_entries_family_idx ON grocery_entries (lower(product_family)) WHERE product_family IS NOT NULL`
   })
 }
 
-export type GroceryEntry = {
+export type GroceryEntry = ProductMetadata & {
   id: string
   receiptId: string
   purchasedOn: string | Date

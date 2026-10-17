@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { ExtractedLine, ExtractedReceipt, ReceiptDuplicate, ReceiptUpload } from '../../shared/types/receipt-upload'
 import { reviewWarnings } from '../../shared/utils/receipt-review'
+import type { ItemCatalog } from '../../shared/types/product'
 
-const props = defineProps<{ upload: ReceiptUpload, duplicates: ReceiptDuplicate[], categories: string[] }>()
+const props = defineProps<{ upload: ReceiptUpload, duplicates: ReceiptDuplicate[], categories: string[], catalog?: ItemCatalog }>()
 const emit = defineEmits<{ dirtyChange: [dirty: boolean], saved: [receiptId: string], updated: [] }>()
 const { apiUrl } = useApi()
 const draft = reactive<ExtractedReceipt>(structuredClone(toRaw(props.upload.draft!)))
@@ -19,6 +20,8 @@ const readOnly = computed(() => props.upload.status !== 'review')
 const dirty = computed(() => JSON.stringify(draft) !== initialSnapshot.value)
 const sourceUrl = computed(() => apiUrl(`/receipt-uploads/${props.upload.id}/source`))
 const lineKeys = ref(draft.lines.map((_, index) => index))
+const productNames = computed(() => props.catalog?.products.map(product => product.item) ?? [])
+const familyNames = computed(() => [...new Set(props.catalog?.products.flatMap(product => product.family ? [product.family] : []) ?? [])].sort())
 let nextKey = draft.lines.length
 
 watch(dirty, value => emit('dirtyChange', value), { immediate: true })
@@ -28,9 +31,20 @@ function numberValue(value: unknown) {
   return value === '' || value === null || value === undefined ? null : Number(value)
 }
 
+function chooseProduct(line: ExtractedLine, value: string | { value: string }) {
+  value = typeof value === 'string' ? value : value.value
+  line.item = value || null
+  const product = props.catalog?.products.find(product => product.item === value)
+  if (product) Object.assign(line, { family: product.family, brand: product.brand, variant: product.variant, category: product.category })
+}
+
+function setFamily(line: ExtractedLine, value: string | { value: string }) {
+  line.family = (typeof value === 'string' ? value : value.value) || null
+}
+
 function addLine() {
   const line: ExtractedLine = {
-    rawDescription: '', item: null, category: null, brand: null, variant: null, quantity: null,
+    rawDescription: '', item: null, family: null, category: null, brand: null, variant: null, quantity: null,
     size: null, unit: null, price: null, regularPrice: null, discount: null, saleItem: false,
     nonGrocery: false, notes: null, confidence: null
   }
@@ -99,6 +113,7 @@ async function save(approve: boolean) {
         <UAlert v-if="notice" color="success" :title="notice" role="status" />
         <fieldset :disabled="readOnly || busy" class="grid min-w-0 grid-cols-2 gap-3">
           <UFormField label="Purchase date" class="min-w-0"><UInput :model-value="draft.purchasedOn ?? ''" type="date" aria-label="Purchase date" class="w-full" @update:model-value="draft.purchasedOn = $event || null" /></UFormField>
+          <UFormField label="Printed time"><UInput :model-value="draft.purchasedTime ?? ''" type="time" step="60" aria-label="Printed time" class="w-full" @update:model-value="draft.purchasedTime = $event || null" /></UFormField>
           <UFormField label="Store" class="min-w-0"><UInput :model-value="draft.location ?? ''" aria-label="Store" class="w-full" @update:model-value="draft.location = $event || null" /></UFormField>
           <UFormField label="Currency"><UInput :model-value="draft.currency ?? ''" maxlength="3" aria-label="Currency" class="w-full" @update:model-value="draft.currency = $event.toUpperCase() || null" /></UFormField>
           <UFormField label="Receipt total (EUR)"><UInput :model-value="draft.total === null ? '' : String(draft.total)" type="number" step="0.01" aria-label="Receipt total" class="w-full" @update:model-value="draft.total = numberValue($event)" /></UFormField>
@@ -116,6 +131,7 @@ async function save(approve: boolean) {
             <li v-for="match in matches" :key="`${match.source}:${match.id}`" class="wrap-anywhere">
               <NuxtLink :to="match.source === 'receipt' ? `/receipts/${match.id}` : { path: '/receipts/upload', query: { review: match.id } }" target="_blank" class="underline">{{ match.location || 'Unknown store' }}</NuxtLink>
               <span> · {{ match.source === 'receipt' ? 'Saved receipt' : 'Pending draft' }} · {{ Math.round(match.similarity * 100) }}% item-name overlap</span>
+              <p v-if="match.times?.length" class="mt-1 text-(--muted)">Printed time: {{ match.times.join(', ') }}<span v-if="match.timeMatch === true"> (same minute)</span><span v-else-if="match.timeMatch === false"> (different minute)</span></p>
               <p v-if="match.sameStore && match.source === 'receipt'" class="mt-1">Saving will append to this existing store/day receipt.</p>
             </li>
           </ul>
@@ -128,7 +144,8 @@ async function save(approve: boolean) {
               <span class="text-sm font-semibold">{{ index + 1 }}<span v-if="line.confidence !== null" class="ml-2 font-normal text-(--muted)">{{ Math.round(line.confidence * 100) }}% confidence</span></span>
               <UTooltip text="Remove line"><UButton icon="i-lucide-trash-2" :aria-label="`Remove line ${index + 1}`" color="error" variant="ghost" :disabled="readOnly" @click="removeLine(index)" /></UTooltip>
             </div>
-            <UFormField label="Product"><UInput :model-value="line.item ?? ''" :aria-label="`Product ${index + 1}`" class="w-full" @update:model-value="line.item = $event || null" /></UFormField>
+            <UFormField label="Product"><UInputMenu :model-value="line.item ?? ''" :items="productNames" mode="autocomplete" :create-item="{ when: 'always', position: 'top' }" :aria-label="`Product ${index + 1}`" class="w-full" @update:model-value="chooseProduct(line, $event)" @create="chooseProduct(line, $event)" /></UFormField>
+            <UFormField label="Product family"><UInputMenu :model-value="line.family ?? ''" :items="familyNames" mode="autocomplete" :create-item="{ when: 'always', position: 'top' }" :maxlength="100" :aria-label="`Product family ${index + 1}`" class="w-full" @update:model-value="setFamily(line, $event)" @create="setFamily(line, $event)" /></UFormField>
             <div class="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3">
               <UFormField label="Paid total (EUR)"><UInput :model-value="line.price === null ? '' : String(line.price)" type="number" step="0.01" min="0" :aria-label="`Paid price ${index + 1}`" class="w-full" @update:model-value="line.price = numberValue($event)" /></UFormField>
               <UFormField label="Total size"><UInput :model-value="line.size === null ? '' : String(line.size)" type="number" step="0.001" min="0.001" :aria-label="`Total size ${index + 1}`" class="w-full" @update:model-value="line.size = numberValue($event)" /></UFormField>

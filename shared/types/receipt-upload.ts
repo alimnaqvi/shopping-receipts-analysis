@@ -1,6 +1,7 @@
 export type ExtractedLine = {
   rawDescription: string
   item: string | null
+  family?: string | null
   category: string | null
   brand: string | null
   variant: string | null
@@ -18,6 +19,7 @@ export type ExtractedLine = {
 
 export type ExtractedReceipt = {
   purchasedOn: string | null
+  purchasedTime?: string | null
   location: string | null
   currency: string | null
   total: number | null
@@ -50,4 +52,6 @@ export type ReceiptDuplicate = {
   location: string
   similarity: number
   sameStore: boolean
+  times?: string[]
+  timeMatch?: boolean | null
 }

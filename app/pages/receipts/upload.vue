@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { ReceiptDuplicate, ReceiptUpload } from '../../../shared/types/receipt-upload'
+import type { ItemCatalog } from '../../../shared/types/product'
 
-type Detail = { upload: ReceiptUpload, duplicates: ReceiptDuplicate[] }
+type Detail = { upload: ReceiptUpload, duplicates: ReceiptDuplicate[], catalog?: ItemCatalog }
 type Queue = { uploads: ReceiptUpload[], hasMore: boolean, configured: boolean, model: string }
 const { apiUrl } = useApi()
 const route = useRoute()
@@ -258,7 +259,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
     </section>
 
     <p v-if="loadingDetail" role="status" class="border-t border-(--line) py-6 text-(--muted)">Loading receipt…</p>
-    <ReceiptUploadReview v-else-if="detail?.upload.draft" :key="`${detail.upload.id}:${detail.upload.revision}`" :upload="detail.upload" :duplicates="detail.duplicates" :categories="categories" @dirty-change="reviewDirty = $event" @saved="approved" @updated="loadQueue()" />
+    <ReceiptUploadReview v-else-if="detail?.upload.draft" :key="`${detail.upload.id}:${detail.upload.revision}`" :upload="detail.upload" :duplicates="detail.duplicates" :categories="categories" :catalog="detail.catalog" @dirty-change="reviewDirty = $event" @saved="approved" @updated="loadQueue()" />
     <section v-else-if="detail" class="grid gap-3 border-t border-(--line) pt-5" aria-label="Selected upload">
       <h2 class="text-xl! tracking-normal! wrap-anywhere">{{ detail.upload.filename }} · Page {{ detail.upload.page }}</h2>
       <p>{{ statusLabels[detail.upload.status] }}</p>

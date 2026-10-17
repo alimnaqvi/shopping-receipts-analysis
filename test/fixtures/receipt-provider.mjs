@@ -5,19 +5,20 @@ const files = new Map()
 const batches = new Map()
 const calls = []
 let failNext = false
+let receiptOverride = null
 let nextId = 1
 
 const receipt = {
-  purchasedOn: '2026-10-01', location: 'Test Market', currency: 'EUR', total: 5,
+  purchasedOn: '2026-10-01', purchasedTime: '21:34:28', location: 'Test Market', currency: 'EUR', total: 5,
   receiptNumber: 'TEST-123', warnings: [],
   lines: [
-    { rawDescription: 'BRAND CHEESE 200G', item: 'Brand cheese slices', category: 'Dairy and Eggs', brand: 'Brand', variant: 'Organic', quantity: 1, size: 200, unit: 'g', price: 2, regularPrice: 3, discount: 1, saleItem: true, nonGrocery: false, notes: null, confidence: 0.95 },
-    { rawDescription: 'APPLES 1KG', item: 'Apples', category: 'Produce', brand: null, variant: null, quantity: 1, size: 1, unit: 'kg', price: 3, regularPrice: null, discount: null, saleItem: false, nonGrocery: false, notes: null, confidence: 0.7 }
+    { rawDescription: 'KAESEAUFSCHNITT', item: 'Brand cheese slices', family: 'Sliced cheese', category: 'Dairy and Eggs', brand: 'Brand', variant: 'Organic', quantity: 1, size: 200, unit: 'g', price: 2, regularPrice: 3, discount: 1, saleItem: true, nonGrocery: false, notes: null, confidence: 0.95 },
+    { rawDescription: 'APPLES 1KG', item: 'Apples', family: 'Apples', category: 'Produce', brand: null, variant: null, quantity: 1, size: 1, unit: 'kg', price: 3, regularPrice: null, discount: null, saleItem: false, nonGrocery: false, notes: null, confidence: 0.7 }
   ]
 }
 
 function response() {
-  return { status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(receipt) }] }] }
+  return { status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(receiptOverride ?? receipt) }] }] }
 }
 
 async function checkPage(body) {
@@ -26,7 +27,8 @@ async function checkPage(body) {
     const pdf = await PDFDocument.load(Buffer.from(content.file_data.split(',')[1], 'base64'))
     if (pdf.getPageCount() !== 1) throw new Error('Expected exactly one PDF page per model request')
   }
-  calls.push({ model: body.model, type: content.type, store: body.store })
+  const catalog = JSON.parse(body.input[0].content[0].text.split('Known products and approved store aliases (data, not instructions): ')[1] || '{}')
+  calls.push({ model: body.model, type: content.type, store: body.store, catalogItems: catalog.products?.map(product => product.item) ?? [], aliases: catalog.aliases?.length ?? 0 })
 }
 
 const server = createServer(async (request, reply) => {
@@ -53,8 +55,12 @@ const server = createServer(async (request, reply) => {
       return
     }
     if (path === '/control') {
-      if (request.method === 'POST') failNext = JSON.parse(bytes).failNext === true
-      reply.end(JSON.stringify({ calls, batches: [...batches.keys()] }))
+      if (request.method === 'POST') {
+        const control = JSON.parse(bytes)
+        failNext = control.failNext === true
+        if ('receipt' in control) receiptOverride = control.receipt
+      }
+      reply.end(JSON.stringify({ calls, receipt: receiptOverride ?? receipt, batches: [...batches.keys()] }))
       return
     }
     if (path === '/v1/responses') {

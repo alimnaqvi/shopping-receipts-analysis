@@ -21,7 +21,7 @@ const Input = defineComponent({ props: ['modelValue'], emits: ['update:modelValu
 const Checkbox = defineComponent({ props: ['modelValue', 'label', 'disabled'], emits: ['update:modelValue'], setup: (props, { emit, attrs }) => () => h('label', [h('input', { ...attrs, type: 'checkbox', disabled: props.disabled, checked: props.modelValue, onChange: (event: Event) => emit('update:modelValue', (event.target as HTMLInputElement).checked) }), props.label]) })
 const Select = defineComponent({ props: ['modelValue', 'items'], emits: ['update:modelValue'], setup: (props, { emit, attrs }) => () => h('select', { ...attrs, value: props.modelValue, onChange: (event: Event) => emit('update:modelValue', (event.target as HTMLSelectElement).value) }, props.items.map((item: any) => h('option', { value: item.value }, item.label))) })
 const Alert = defineComponent({ props: ['title'], setup: props => () => h('p', props.title) })
-const stubs = { UButton: Button, UInput: Input, UTextarea: Input, UCheckbox: Checkbox, USelect: Select, UFormField: Slot, UTooltip: Slot, UAlert: Alert, UIcon: true, CategoryInput: Input, UnitInput: Input, UFileUpload: true }
+const stubs = { UButton: Button, UInput: Input, UInputMenu: Input, UTextarea: Input, UCheckbox: Checkbox, USelect: Select, UFormField: Slot, UTooltip: Slot, UAlert: Alert, UIcon: true, CategoryInput: Input, UnitInput: Input, UFileUpload: true }
 let requests: any[]
 let failSave: boolean
 let conflictApprove: boolean
@@ -96,6 +96,20 @@ it('requires explicit duplicate override and clears confirmations when a correct
   expect(approve.attributes('disabled')).toBeUndefined()
   await wrapper.get('input[aria-label="Product 1"]').setValue('Corrected cheese')
   expect(approve.attributes('disabled')).toBeDefined()
+  wrapper.unmount()
+})
+
+it('chooses an existing product with its exact family/brand/variant and saves printed time', async () => {
+  const catalog = { products: [{ item: 'Ja! Milk 1.5%', family: 'Milk', brand: 'Ja!', variant: '1.5%', category: 'Dairy' }], aliases: [], truncated: false }
+  const wrapper = await mountSuspended(ReceiptUploadReview, { props: { upload, duplicates: [], categories: ['Dairy'], catalog }, global: { stubs } })
+  await wrapper.get('input[aria-label="Product 1"]').setValue('Ja! Milk 1.5%')
+  expect((wrapper.get('input[aria-label="Product family 1"]').element as HTMLInputElement).value).toBe('Milk')
+  expect((wrapper.get('input[aria-label="Brand 1"]').element as HTMLInputElement).value).toBe('Ja!')
+  expect((wrapper.get('input[aria-label="Variant 1"]').element as HTMLInputElement).value).toBe('1.5%')
+  await wrapper.get('input[aria-label="Printed time"]').setValue('14:58')
+  await wrapper.findAll('button').find(button => button.text() === 'Save corrections')!.trigger('click')
+  await vi.waitFor(() => expect(requests).toHaveLength(1))
+  expect(requests[0].draft).toMatchObject({ purchasedTime: '14:58', lines: [{ item: 'Ja! Milk 1.5%', family: 'Milk', brand: 'Ja!', variant: '1.5%', rawDescription: 'CHEESE' }] })
   wrapper.unmount()
 })
 

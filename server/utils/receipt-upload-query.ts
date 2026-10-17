@@ -7,6 +7,8 @@ import { itemSimilarity, parseExtraction } from './receipt-extraction.ts'
 import { applyCategoryAssignments, categoryAssignments, lockItemWrites } from './category-query.ts'
 import { ensureStore, upsertReceipt } from './receipt-query.ts'
 import type { ReceiptPage } from './receipt-files.ts'
+import { learnProductAlias } from './product-catalog.ts'
+import { compatibleProduct, productTextKey, receiptMinute } from '../../shared/utils/product-identity.ts'
 
 type Database = postgres.Sql | postgres.TransactionSql
 export type UploadRow = ReceiptUpload & { bytes: Buffer }
@@ -72,8 +74,9 @@ export async function listReceiptUploads(sql: Database, offset: number, archived
 
 export async function receiptUploadDuplicates(sql: Database, draft: ExtractedReceipt, id: string): Promise<ReceiptDuplicate[]> {
   if (!draft.purchasedOn) return []
-  const receipts = await sql<{ id: string, location: string, items: string[] }[]>`
-    SELECT receipts.id::text, receipts.location, array_agg(entries.item) AS items
+  const receipts = await sql<{ id: string, location: string, items: string[], times?: string[] }[]>`
+    SELECT receipts.id::text, receipts.location, array_agg(entries.item) AS items,
+      array_remove(array_agg(DISTINCT entries.purchased_time), NULL) AS times
     FROM grocery_receipt_details receipts
     INNER JOIN grocery_entry_details entries ON entries.receipt_id = receipts.id
     WHERE receipts.purchased_on::text = ${draft.purchasedOn}
@@ -85,15 +88,19 @@ export async function receiptUploadDuplicates(sql: Database, draft: ExtractedRec
   `
   const candidates = [
     ...receipts.map(receipt => ({ ...receipt, source: 'receipt' as const })),
-    ...uploads.map(upload => ({ id: upload.id, location: upload.draft.location ?? '', items: upload.draft.lines.map(line => line.item ?? ''), source: 'upload' as const }))
+    ...uploads.map(upload => ({ id: upload.id, location: upload.draft.location ?? '', items: upload.draft.lines.map(line => line.item ?? ''),
+      times: upload.draft.purchasedTime ? [upload.draft.purchasedTime] : [], source: 'upload' as const }))
   ]
   return candidates.map(candidate => ({
     id: candidate.id,
     source: candidate.source,
     location: candidate.location,
     similarity: itemSimilarity(draft.lines.map(line => line.item ?? ''), candidate.items),
-    sameStore: storeNameKey(draft.location) === storeNameKey(candidate.location)
+    sameStore: storeNameKey(draft.location) === storeNameKey(candidate.location),
+    times: candidate.times ?? [],
+    timeMatch: draft.purchasedTime && candidate.times?.length ? candidate.times.includes(draft.purchasedTime) : null
   })).filter(candidate => candidate.sameStore || candidate.similarity >= 0.6)
+    .sort((first, second) => Number(second.timeMatch === true) - Number(first.timeMatch === true) || second.similarity - first.similarity)
 }
 
 export async function saveUploadDraft(sql: Database, id: string, value: unknown, revision: number) {
@@ -124,6 +131,12 @@ export function approvedReceipt(value: unknown) {
   if (draft.currency !== 'EUR') throw uploadError(400, 'Only EUR receipts can be approved. No currency conversion is performed.')
   if (!draft.lines.length) throw uploadError(400, 'Add at least one product line')
   const entries = draft.lines.map((line, index) => {
+    if ((line.family?.length ?? 0) > 100 || (line.brand?.length ?? 0) > 200 || (line.variant?.length ?? 0) > 200) {
+      throw uploadError(400, `Line ${index + 1}: family, brand or variant is too long`)
+    }
+    if ((line.quantity !== null && line.quantity <= 0) || (line.regularPrice !== null && line.regularPrice < 0) || (line.discount !== null && line.discount < 0)) {
+      throw uploadError(400, `Line ${index + 1}: quantity must be positive and regular price/discount must be non-negative`)
+    }
     if (line.price === null || !line.item?.trim()) throw uploadError(400, `Line ${index + 1}: product and paid price are required`)
     if (line.price > 9999999999.99 || (line.size !== null && (line.size < 0.001 || line.size > 999999999.999))) {
       throw uploadError(400, `Line ${index + 1}: price or size is outside the supported range`)
@@ -132,6 +145,16 @@ export function approvedReceipt(value: unknown) {
     if (entry.costPerUnit !== null && entry.costPerUnit > 99999999.9999) throw uploadError(400, `Line ${index + 1}: normalized price is outside the supported range`)
     return entry
   })
+  const identities = new Map<string, ExtractedReceipt['lines'][number]>()
+  for (const line of draft.lines) {
+    const key = productTextKey(line.item)
+    const previous = identities.get(key)
+    if (previous && ((previous.brand && line.brand && productTextKey(previous.brand) !== productTextKey(line.brand))
+      || (previous.variant && line.variant && productTextKey(previous.variant) !== productTextKey(line.variant)))) {
+      throw uploadError(400, 'Different brands or variants must have distinct product names')
+    }
+    identities.set(key, line)
+  }
   return { draft, entries, assignments: categoryAssignments(entries) }
 }
 
@@ -147,6 +170,14 @@ export async function approveReceiptUpload(sql: postgres.Sql, id: string, value:
     if (upload.status === 'saved') return { receiptId: upload.receiptId, alreadySaved: true }
     if (upload.status !== 'review' || upload.revision !== revision) throw uploadError(409, 'This draft changed. Reload it before approval.')
     await lockItemWrites(tx)
+    const known = await tx<{ item: string, brand: string | null, variant: string | null }[]>`
+      SELECT DISTINCT item, brand, variant FROM grocery_entry_details
+      WHERE lower(item) = ANY(${entries.map(entry => entry.item.toLowerCase())}::text[])
+        AND (brand IS NOT NULL OR variant IS NOT NULL)
+    `
+    if (draft.lines.some(line => known.some(product => productTextKey(product.item) === productTextKey(line.item) && !compatibleProduct(line, product)))) {
+      throw uploadError(409, 'This product name already has a different brand or variant. Choose the matching product or use a distinct name.')
+    }
     const duplicates = await receiptUploadDuplicates(tx, draft, id)
     if (duplicates.length && !allowDuplicates) throw Object.assign(
       uploadError(409, 'Possible duplicate receipt. Review the matches and explicitly confirm saving anyway.'),
@@ -155,13 +186,18 @@ export async function approveReceiptUpload(sql: postgres.Sql, id: string, value:
     const location = await ensureStore(tx, entries[0]!.location)
     const receiptId = await upsertReceipt(tx, entries[0]!.purchasedOn, location)
     const entryIds: string[] = []
-    for (const entry of entries) {
+    for (const [index, entry] of entries.entries()) {
+      const line = draft.lines[index]!
       const [saved] = await tx<{ id: string }[]>`
-        INSERT INTO grocery_entries (receipt_id, item, size, unit, price, sale_item, non_grocery, notes)
-        VALUES (${receiptId}, ${entry.item}, ${entry.size}, ${entry.unit}, ${entry.price}, ${entry.saleItem}, ${entry.nonGrocery}, ${entry.notes})
+        INSERT INTO grocery_entries (receipt_id, item, size, unit, price, sale_item, non_grocery, notes,
+          product_family, brand, variant, raw_description, quantity, regular_price, discount, purchased_time, source_upload_id)
+        VALUES (${receiptId}, ${entry.item}, ${entry.size}, ${entry.unit}, ${entry.price}, ${entry.saleItem}, ${entry.nonGrocery}, ${entry.notes},
+          ${line.family?.trim() || null}, ${line.brand}, ${line.variant}, ${line.rawDescription}, ${line.quantity},
+          ${line.regularPrice}, ${line.discount}, ${receiptMinute(draft.purchasedTime)}, ${id})
         RETURNING id::text
       `
       entryIds.push(saved!.id)
+      await learnProductAlias(tx, location, { ...line, item: entry.item })
     }
     await applyCategoryAssignments(tx, assignments)
     await tx`

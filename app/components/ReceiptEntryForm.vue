@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { maxEntryNotesLength } from '../../shared/utils/entry-notes'
 import { formatMoney } from '../../shared/utils/currency'
+import type { ProductMetadata } from '../../shared/types/product'
 
 import { normalizeUnit } from '../../shared/utils/units'
 import { categoryKey } from '../../shared/utils/category'
@@ -22,6 +23,7 @@ type Suggestion = {
 }
 
 type ReceiptLine = {
+  metadata: ProductMetadata | null
   id?: string
   key: number
   item: string
@@ -63,7 +65,7 @@ type EditableReceipt = {
   location: string
   itemCount: number
   total: string
-  entries: Array<{
+  entries: Array<ProductMetadata & {
     id: string
     item: string
     price: string
@@ -181,6 +183,7 @@ function initialPurchasedOn() {
 
 function blankLine(): ReceiptLine {
   return {
+    metadata: null,
     key: nextKey++, item: '', price: '', size: '', unit: '', saleItem: false,
     nonGrocery: false, notes: '', category: null, categoryItem: '', categoryChanged: false, expanded: false, confirmingRemove: false, itemMenuOpen: false,
     pendingItemCreation: '', itemBeforeCreation: '', searchTerm: '', suggestions: [], request: 0, backfillKey: '', backfillChecking: false, backfillPrompted: false
@@ -195,6 +198,7 @@ function lineFromEntry(entry: EditableReceipt['entries'][number]): ReceiptLine {
   const size = compactNumber(entry.size)
   const unit = entry.unit ?? ''
   return {
+    metadata: entry,
     id: entry.id,
     key: nextKey++,
     item: entry.item,
@@ -1371,7 +1375,9 @@ async function deleteReceipt() {
           <UButton type="button" label="Cancel" color="neutral" variant="outline" @click="cancelCreateItem(line)" />
           <UButton type="button" :data-confirm-item="line.key" label="Create item" icon="i-lucide-plus" @click="confirmCreateItem(line)" />
         </div>
+        <ProductDetails v-if="line.metadata && !line.expanded" :metadata="line.metadata" compact class="col-span-full pb-1" />
         <div v-if="line.expanded" class="receipt-line-details col-span-full grid grid-cols-[minmax(180px,1fr)_minmax(240px,2fr)_auto] items-start gap-4.5 p-[4px_0_3px] max-[640.01px]:grid-cols-1">
+          <ProductDetails v-if="line.metadata" :metadata="line.metadata" class="col-span-full border-b border-(--line) pb-3" />
           <UFormField label="Category" :name="`category-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
             <div>
               <CategoryInput :data-line-category="line.key" :aria-describedby="`category-scope-${line.key}`" v-model="line.category" :items="categoryChoices" @change="changeCategory(line, $event)" @tab-next="focusLineNotes(line)" :ui="{ base: 'min-h-11 px-2.5 py-2' }" />

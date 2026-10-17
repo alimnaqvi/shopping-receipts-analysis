@@ -4,7 +4,7 @@ import { extractionSchema, extractionPrompt, itemSimilarity, parseExtraction } f
 import { reviewWarnings } from '../shared/utils/receipt-review.ts'
 
 export const extractedLine = {
-  rawDescription: 'CHEESE', item: 'Cheese', category: null, brand: null, variant: null,
+  rawDescription: 'CHEESE', item: 'Cheese', family: null, category: null, brand: null, variant: null,
   quantity: 1, size: 200, unit: 'g', price: 2, regularPrice: null, discount: null,
   saleItem: false, nonGrocery: false, notes: null, confidence: 0.95
 }
@@ -22,6 +22,14 @@ test('extraction contract preserves rich data without inventing missing fields',
   assert.equal(extractionSchema.properties.lines.items.required.length, Object.keys(extractedLine).length)
   assert.match(extractionPrompt, /TOTAL paid/)
   assert.match(extractionPrompt, /untrusted data/)
+  assert.match(extractionPrompt, /Always write item names in English/)
+  assert.match(extractionPrompt, /rawDescription verbatim/)
+  assert.match(extractionPrompt, /Do not infer an unprinted brand/)
+  const timed = { ...extractedReceipt, purchasedTime: '21:34:28' }
+  assert.equal(parseExtraction(timed).purchasedTime, '21:34')
+  assert.equal(timed.purchasedTime, '21:34:28')
+  assert.throws(() => parseExtraction({ ...extractedReceipt, purchasedTime: '24:00' }), /Receipt time/)
+  assert.throws(() => parseExtraction({ ...extractedReceipt, lines: [{ ...extractedLine, family: 1 }] }), /family/)
 })
 
 test('extraction rejects malformed or unbounded model output', () => {

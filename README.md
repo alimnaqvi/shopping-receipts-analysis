@@ -35,6 +35,7 @@ browser.
 - Store and category management
 - CSV and XLSX import and export
 - Receipt image/PDF uploads, persistent correction drafts, and immediate or discounted OpenAI Batch extraction
+- English catalog-aware extraction, approved store aliases, product-family comparisons, and preserved product/source details
 
 ## Receipt uploads
 
@@ -75,7 +76,9 @@ and save corrections or approve the receipt. Unknown amounts remain blank. Paid
 price and size represent the **whole receipt line**, including all units bought,
 so normalized price remains meaningful. Brands, variants, quantities, discounts,
 regular prices, confidence estimates, receipt number and original descriptions are
-retained with the reviewed draft. Confidence is a model heuristic, not a calibrated
+retained with the reviewed draft. Product family, brand, variant, receipt text, quantity,
+regular line total, discount and printed time are also persisted on approved entries.
+Confidence is a model heuristic, not a calibrated
 probability. Basket-wide discounts and refunds need manual reconciliation; verify
 the line sum against the printed total before approval. A non-EUR extraction cannot
 be approved until its currency is corrected; changing the code does not convert amounts.
@@ -88,11 +91,60 @@ Receipt Box groups purchases by **store and date**; explicitly approving a same-
 same-day receipt appends its lines to the existing receipt. Approval is transactional
 and repeat-safe, and stale draft edits are rejected rather than overwriting corrections.
 
+### Product identity and families
+
+Extraction requests **English product names** while preserving the original German
+receipt text. Both immediate and Batch requests include known products with their
+family/brand/variant, existing categories and approved store-specific aliases. For
+example, `Ja! Milk 1.5%`, `Ja! Milk 3%` and `Milsani Milk 1.5%` remain distinct products
+under the narrower `Milk` family, not just the broad `Dairy and Eggs` category.
+Organic, lactose-free, flavour and fat-percentage distinctions remain in the variant.
+Unknown brands must not be guessed from the store.
+
+Aliases are learned **only on approval**, using the corrected product name and
+original store-specific receipt description. An unambiguous compatible alias or
+exact normalized name can reuse a canonical product. Conflicting brands/variants
+and ambiguous aliases are not automatically merged. Approval rejects a known product
+name with conflicting brand/variant metadata. A shared family is never sufficient
+evidence that two products are identical. Manually corrected draft identities are
+preserved when reopening review.
+
+Model context is bounded to 500 recent/frequent products and 1,000 aliases, with a
+size budget. After extraction and when opening review, targeted lookups use the full
+approved alias dictionary for the receipt's store and raw descriptions, including
+older products outside that context. Different unseen abbreviations can still need
+manual correction; this is not a guaranteed semantic product-identity system.
+
+Existing item names are **not** automatically translated, renamed or merged. Saved
+product metadata is recovered from older approved upload drafts when exact stored
+entry references exist, without changing item names, prices or categories. Unknown
+legacy details stay unknown. The existing duplicate-name review remains available
+for manually consolidating legacy names.
+
+Saved receipts show product identity summaries, with receipt text, quantity, discount,
+regular total and original scan links under line details. Item price history exposes
+the same purchase details. **Receipts → Product families** compares the distinct
+products within a family, including purchase counts, total spending, latest line
+total, latest normalized price, historical low and known regular-price reference.
+Weight, volume and count bases stay separate; missing sizes do not invent unit prices.
+Family membership is not a claim of nutritional equivalence. Historical purchases
+with the same exact item name can join its unambiguous recorded family.
+
+### Printed receipt time
+
+`purchasedTime` records the printed checkout/receipt time as local `HH:mm`. Printed
+seconds are discarded without rounding; scan/file timestamps and timezone guesses
+are never used. Missing times remain null. Time is editable in review and visible
+on saved purchase/source details. Duplicate warnings show same-minute, different-minute
+or unknown-time evidence, but remain warnings rather than proof of duplication.
+Store/day grouping is unchanged: multiple source receipts can have different printed
+times within one saved store/day receipt.
+
 Original page bytes, raw extraction, reviewed draft and approved-entry references
 are retained in PostgreSQL, including after approval or skipping. Back up the database
 to back up these originals. The standard CSV/XLSX export contains approved core fields,
-not originals or the richer extraction records. Rich product-family analytics,
-hierarchical categories and bank-statement integration are not implemented here.
+not originals or the richer extraction records. Product-family comparisons are available
+in the app; hierarchical categories and bank-statement integration are not implemented here.
 Deleting/resetting all application data also removes uploads. Treat database backups
 as sensitive: receipt scans can contain personal or payment information.
 

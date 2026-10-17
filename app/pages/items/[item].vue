@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { normalizedHistoricalPrice } from '../../../shared/utils/normalized-price'
+import type { ProductMetadata } from '../../../shared/types/product'
 
-type HistoryEntry = {
+type HistoryEntry = ProductMetadata & {
   id: string
   purchasedOn: string
   item: string
@@ -70,6 +71,7 @@ watch(selectedBasis, () => { selectedPoint.value = null })
 
 const visiblePoints = computed(() => pricePoints.value.filter(point => point.basis === selectedBasis.value))
 const newestFirst = computed(() => [...visiblePoints.value].reverse())
+const productMetadata = computed(() => [...(data.value?.entries ?? [])].reverse().find(entry => entry.productFamily || entry.brand || entry.variant) ?? {})
 
 const chartPoints = computed(() => {
   const points = visiblePoints.value
@@ -216,6 +218,7 @@ function packageLabel(entry: HistoryEntry) {
       <UButton type="button" label="Try again" color="neutral" variant="outline" @click="refresh()" />
     </div>
     <template v-else-if="data">
+      <ProductDetails :metadata="productMetadata" compact class="mb-5" />
       <div v-if="series.length > 1" class="series-picker m-[-12px_0_18px] flex flex-wrap items-center gap-1.5 rounded-[14px] p-2 [background:var(--surface)] [border:1px_solid_var(--line)]" aria-label="Normalized price basis">
         <span>Compare by</span>
         <UButton
@@ -302,7 +305,7 @@ function packageLabel(entry: HistoryEntry) {
             <thead><tr><th>Date</th><th>Store</th><th>Package</th><th>Price</th><th>Normalized</th><th><span class="sr-only">Actions</span></th></tr></thead>
             <tbody>
               <tr v-for="point in newestFirst" :key="point.id">
-                <td data-label="Date">{{ dateLabel(point.purchasedOn) }} <UBadge v-if="point.saleItem" label="Sale" icon="i-lucide-tag" color="warning" variant="soft" size="sm" /></td>
+                <td data-label="Date">{{ dateLabel(point.purchasedOn) }} <span v-if="point.purchasedTime">{{ point.purchasedTime }}</span><UBadge v-if="point.saleItem" label="Sale" icon="i-lucide-tag" color="warning" variant="soft" size="sm" /><details v-if="point.rawDescription || point.sourceUploadId" class="mt-2"><summary class="cursor-pointer text-xs text-(--muted)">Purchase details</summary><ProductDetails :metadata="point" class="mt-2" /></details></td>
                 <td data-label="Store">{{ point.location }}</td>
                 <td data-label="Package">{{ packageLabel(point) }}</td>
                 <td data-label="Price">{{ currency(point.price) }}</td>

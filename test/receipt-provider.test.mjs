@@ -32,6 +32,8 @@ test('provider is explicit and server-configured; image and PDF inputs use nativ
   assert.equal(body.text.format.strict, true)
   assert.equal(body.input[0].content[1].type, 'input_image')
   assert.match(body.input[0].content[0].text, /Dairy/)
+  const catalog = { products: [{ item: 'Sliced cheese', family: 'Sliced cheese', brand: null, variant: null, category: 'Dairy' }], aliases: [], truncated: false }
+  assert.match(extractionRequest(input, 'model', [], catalog).input[0].content[0].text, /Sliced cheese/)
   const pdf = extractionRequest({ ...input, mime: 'application/pdf' }, 'custom-model', [])
   assert.equal(pdf.model, 'custom-model')
   assert.match(pdf.input[0].content[1].file_data, /^data:application\/pdf;base64,/)

@@ -370,6 +370,32 @@ export async function migrate() {
       LEFT JOIN grocery_item_categories item_categories ON item_categories.item = entries.item
       LEFT JOIN grocery_categories categories ON categories.id = item_categories.category_id
     `
+    await tx`
+      CREATE TABLE IF NOT EXISTS grocery_receipt_uploads (
+        id UUID PRIMARY KEY,
+        source_hash TEXT NOT NULL UNIQUE,
+        filename TEXT NOT NULL,
+        page INTEGER NOT NULL,
+        mime TEXT NOT NULL CHECK (mime IN ('image/jpeg', 'image/png', 'application/pdf')),
+        source BYTEA NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending', 'processing', 'batch', 'review', 'failed', 'saved', 'discarded')),
+        error TEXT,
+        provider TEXT NOT NULL DEFAULT 'openai',
+        model TEXT,
+        batch_id TEXT,
+        lease_token UUID,
+        extraction JSONB,
+        draft JSONB,
+        revision INTEGER NOT NULL DEFAULT 1,
+        receipt_id BIGINT REFERENCES grocery_receipts(id) ON DELETE SET NULL,
+        entry_ids JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+    await tx`CREATE INDEX IF NOT EXISTS grocery_receipt_uploads_queue_idx ON grocery_receipt_uploads (created_at DESC, id)`
+    await tx`CREATE INDEX IF NOT EXISTS grocery_receipt_uploads_batch_idx ON grocery_receipt_uploads (batch_id) WHERE batch_id IS NOT NULL`
   })
 }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatMoney } from '../../shared/utils/currency'
 import { normalizeUnit } from '../../shared/utils/units'
 import { maxEntryNotesLength } from '../../shared/utils/entry-notes'
 
@@ -79,7 +80,7 @@ const itemOptions = computed(() => itemSuggestions.value.map(suggestion => ({
   description: [
     suggestion.location,
     suggestion.size ? `${Number(suggestion.size).toLocaleString()} ${suggestion.unit || ''}`.trim() : suggestion.unit,
-    suggestion.price ? `$${Number(suggestion.price).toFixed(2)}` : null
+    suggestion.price ? formatMoney(suggestion.price) : null
   ].filter(Boolean).join(' · ')
 })))
 
@@ -199,8 +200,8 @@ async function save() {
       />
     </UFormField>
 
-    <p v-if="selectedHistory" class="m-[10px_0_-7px] text-[13px] text-(--muted)">
-      Last paid <strong>${{ Number(selectedHistory.price).toFixed(2) }}</strong>
+    <p v-if="selectedHistory?.price != null" class="m-[10px_0_-7px] text-[13px] text-(--muted)">
+      Last paid <strong>{{ formatMoney(selectedHistory.price) }}</strong>
       <span v-if="selectedHistory.lastUsed"> on {{ String(selectedHistory.lastUsed).slice(0, 10) }}</span>.
     </p>
 
@@ -209,7 +210,7 @@ async function save() {
         <UInputMenu id="location" v-model="form.location" :items="locationSuggestions.map(suggestion => suggestion.value)" create-item icon="i-lucide-store" placeholder="Choose or add a store…" required />
       </UFormField>
       <UFormField label="Price" name="price" required class="field relative grid min-w-0 gap-[7px]">
-        <UInput id="price" v-model="form.price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" icon="i-lucide-dollar-sign" required />
+        <UInput id="price" v-model="form.price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" icon="i-lucide-euro" required />
       </UFormField>
     </div>
 
@@ -222,7 +223,7 @@ async function save() {
       </UFormField>
       <div v-if="normalizedCost !== null" class="cost-preview flex min-h-13 items-center justify-between rounded-xl px-3.5 py-2 text-(--accent-strong) [background:var(--accent-soft)] max-[640.01px]:col-span-full" aria-live="polite">
         <span class="text-[12px] font-bold uppercase">{{ ['g', 'mL'].includes(normalizedUnit || '') ? `Per 100 ${normalizedUnit}` : normalizedUnit === 'ea' ? 'Each' : `Per ${normalizedUnit || 'unit'}` }}</span>
-        <strong class="text-[20px]">${{ normalizedCost.toFixed(2) }}</strong>
+        <strong class="text-[20px]">{{ formatMoney(normalizedCost) }}</strong>
       </div>
     </div>
 

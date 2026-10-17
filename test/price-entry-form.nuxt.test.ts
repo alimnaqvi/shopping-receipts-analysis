@@ -1,6 +1,6 @@
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PriceEntryForm from '../app/components/PriceEntryForm.vue'
 
 const mounted: Array<{ unmount: () => void }> = []
@@ -12,6 +12,19 @@ beforeEach(() => {
 afterEach(() => mounted.splice(0).forEach(wrapper => wrapper.unmount()))
 
 describe('Price entry notes', () => {
+  it.each([null, '0', '2.50'])('only shows known historical prices in EUR (%s)', async (price) => {
+    registerEndpoint('/api/suggestions', () => [{ value: 'Milk', price }])
+    const wrapper = await mountSuspended(PriceEntryForm)
+    mounted.push(wrapper)
+    const menu = wrapper.findAllComponents({ name: 'UInputMenu' })[0]!
+    menu.vm.$emit('update:searchTerm', 'milk')
+    await vi.waitFor(() => expect((menu.props('items') as any[]).length).toBe(1))
+    ;(menu.props('items') as any[])[0].onSelect()
+    await flushPromises()
+    if (price === null) expect(wrapper.text()).not.toContain('Last paid')
+    else expect(wrapper.text()).toContain(`Last paid \u20ac${Number(price).toFixed(2)}`)
+  })
+
   it('limits notes and displays a live character count', async () => {
     const wrapper = await mountSuspended(PriceEntryForm)
     mounted.push(wrapper)

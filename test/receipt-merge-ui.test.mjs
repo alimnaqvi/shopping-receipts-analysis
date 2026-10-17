@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
+import { formatMoney } from '../shared/utils/currency.ts'
 import {
   addedReceiptMessage,
   receiptLineIsComplete,
@@ -16,11 +17,17 @@ const saved = {
 }
 
 describe('receipt merge UI copy', () => {
+  test('formats zero, numeric strings and negative adjustments as EUR', () => {
+    assert.equal(formatMoney(0), '\u20ac0.00')
+    assert.equal(formatMoney('2.5'), '\u20ac2.50')
+    assert.equal(formatMoney(-1), '-\u20ac1.00')
+  })
+
   test('reports newly saved lines separately from the combined receipt total', () => {
-    assert.equal(addedReceiptMessage(2, saved), 'Added 2 items to the Market receipt · 4 items total · $12.50')
+    assert.equal(addedReceiptMessage(2, saved), 'Added 2 items to the Market receipt · 4 items total · \u20ac12.50')
     assert.equal(
       addedReceiptMessage(1, { ...saved, itemCount: 1, total: '3' }),
-      '1 item saved · $3.00'
+      '1 item saved · \u20ac3.00'
     )
   })
 

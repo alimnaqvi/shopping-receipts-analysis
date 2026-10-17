@@ -1,3 +1,5 @@
+import { formatMoney } from '../../shared/utils/currency.ts'
+
 export type ReceiptSaveSummary = {
   id: string
   purchasedOn: string
@@ -22,9 +24,9 @@ function items(count: number) {
 
 export function addedReceiptMessage(submittedCount: number, saved: ReceiptSaveSummary) {
   if (saved.itemCount > submittedCount) {
-    return `Added ${items(submittedCount)} to the ${saved.location} receipt · ${items(saved.itemCount)} total · $${Number(saved.total).toFixed(2)}`
+    return `Added ${items(submittedCount)} to the ${saved.location} receipt · ${items(saved.itemCount)} total · ${formatMoney(saved.total)}`
   }
-  return `${items(submittedCount)} saved · $${Number(saved.total).toFixed(2)}`
+  return `${items(submittedCount)} saved · ${formatMoney(saved.total)}`
 }
 
 export function receiptLineIsComplete(line: AutosaveReceiptLine) {

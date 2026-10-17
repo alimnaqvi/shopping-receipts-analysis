@@ -28,6 +28,10 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://receiptbox:local-receipt-box-only@postgres:5432/receiptbox
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RECEIPT_AI_PROVIDER: ${RECEIPT_AI_PROVIDER:-openai}
+      RECEIPT_AI_MODEL: ${RECEIPT_AI_MODEL:-gpt-6-luna}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       AUTH_MODE: ${AUTH_MODE:-disabled}
       NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD:-}
       NUXT_OAUTH_OIDC_CLIENT_ID: ${NUXT_OAUTH_OIDC_CLIENT_ID:-}

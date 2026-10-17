@@ -187,7 +187,7 @@ const summary = computed(() => {
 })
 
 function currency(value: string | number | null) {
-  return value === null ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(value))
+  return value === null ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency: 'EUR' }).format(Number(value))
 }
 
 function dateLabel(value: string) {

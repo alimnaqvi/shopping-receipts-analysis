@@ -684,8 +684,8 @@ async function exportXlsx() {
       { width: 12 }, { width: 18 }, { width: 20 }, { width: 12 }, { width: 14 }, { width: 38 }
     ]
     sheet.getColumn(1).numFmt = 'yyyy-mm-dd'
-    sheet.getColumn(7).numFmt = '$0.00'
-    sheet.getColumn(8).numFmt = '$0.0000'
+    sheet.getColumn(7).numFmt = '\u20ac0.00'
+    sheet.getColumn(8).numFmt = '\u20ac0.0000'
     download(new Blob([await workbook.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'xlsx')
   } catch (error: any) {
     errorMessage.value = error?.data?.statusMessage || error?.message || 'Export failed'

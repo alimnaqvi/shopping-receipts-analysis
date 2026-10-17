@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { maxEntryNotesLength } from '../../shared/utils/entry-notes'
+import { formatMoney } from '../../shared/utils/currency'
 
 import { normalizeUnit } from '../../shared/utils/units'
 import { categoryKey } from '../../shared/utils/category'
@@ -515,7 +516,7 @@ function itemOptions(line: ReceiptLine) {
     onSelect: () => chooseItem(line, suggestion),
     description: [
       suggestion.size ? `${Number(suggestion.size).toLocaleString()} ${suggestion.unit || ''}`.trim() : suggestion.unit,
-      suggestion.price ? `last $${Number(suggestion.price).toFixed(2)}` : null
+      suggestion.price ? `last ${formatMoney(suggestion.price)}` : null
     ].filter(Boolean).join(' · ')
   }))
 }
@@ -1340,7 +1341,7 @@ async function deleteReceipt() {
         </UFormField>
         <UFormField :name="`price-${line.key}`" class="field relative grid min-w-0 gap-[7px] max-[640.01px]:col-start-1">
           <span class="hidden max-[900.01px]:block max-[900.01px]:mb-[5px] max-[900.01px]:text-(--muted) max-[900.01px]:text-[11px] max-[900.01px]:font-[750] max-[900.01px]:tracking-[.07em] max-[900.01px]:uppercase">Price</span>
-          <UInput :data-line-price="line.key" v-model="line.price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" icon="i-lucide-dollar-sign" @focus="closeItemMenu(line)" @blur="formatPrice(line)" @keydown.enter.exact.prevent="focusLineSize(line)" @keydown.meta.enter.exact.prevent="finishLine(line)" @keydown.ctrl.enter.exact.prevent="finishLine(line)" :ui="{ base: 'min-h-11 px-2.5 py-2' }" />
+          <UInput :data-line-price="line.key" v-model="line.price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" icon="i-lucide-euro" @focus="closeItemMenu(line)" @blur="formatPrice(line)" @keydown.enter.exact.prevent="focusLineSize(line)" @keydown.meta.enter.exact.prevent="finishLine(line)" @keydown.ctrl.enter.exact.prevent="finishLine(line)" :ui="{ base: 'min-h-11 px-2.5 py-2' }" />
         </UFormField>
         <UFormField :name="`size-${line.key}`" class="field relative grid min-w-0 gap-[7px] max-[640.01px]:col-start-2">
           <span class="hidden max-[900.01px]:block max-[900.01px]:mb-[5px] max-[900.01px]:text-(--muted) max-[900.01px]:text-[11px] max-[900.01px]:font-[750] max-[900.01px]:tracking-[.07em] max-[900.01px]:uppercase">Size</span>
@@ -1447,7 +1448,7 @@ async function deleteReceipt() {
         </div>
         <div class="receipt-footer-total">
           <span>{{ enteredLines.length }} {{ enteredLines.length === 1 ? 'line' : 'lines' }}</span>
-          <strong>${{ receiptTotal.toFixed(2) }}</strong>
+          <strong>{{ formatMoney(receiptTotal) }}</strong>
         </div>
       </template>
     </footer>
@@ -1470,7 +1471,7 @@ async function deleteReceipt() {
           <ul class="m-0 grid max-h-[190px] list-none overflow-auto rounded-xl p-0 [border:1px_solid_var(--line)]">
             <li v-for="line in selectedSplitLines" :key="line.id" class="flex items-center justify-between gap-3 border-t border-(--line) px-3 py-[9px] first:border-t-0">
               <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--ink)">{{ line.item }}</span>
-              <strong class="shrink-0 text-(--muted) tabular-nums">${{ Number(line.price).toFixed(2) }}</strong>
+              <strong class="shrink-0 text-(--muted) tabular-nums">{{ formatMoney(line.price) }}</strong>
             </li>
           </ul>
         </div>

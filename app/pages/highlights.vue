@@ -79,7 +79,7 @@ watch(selectedPeriod, () => {
 function wholeCurrency(value: string | number) {
   return new Intl.NumberFormat(undefined, {
     style: 'currency',
-    currency: 'USD',
+    currency: 'EUR',
     maximumFractionDigits: 0
   }).format(Number(value))
 }
@@ -313,7 +313,7 @@ function signedCurrency(value: number | null) {
 }
 
 function unitCurrency(value: number) {
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(value)
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 }).format(value)
 }
 </script>
 
@@ -344,7 +344,7 @@ function unitCurrency(value: number) {
       <section class="highlight-stats mb-5 grid grid-cols-[repeat(3,1fr)] gap-3.5 max-[900.01px]:grid-cols-3 max-[640.01px]:grid-cols-2" aria-label="Receipt Box summary">
         <UCard class="stat-card"><UIcon name="i-lucide-receipt-text" /><strong>{{ data.summary.receipts.toLocaleString() }}</strong><span>receipts</span></UCard>
         <UCard class="stat-card"><UIcon name="i-lucide-shopping-basket" /><strong>{{ data.summary.items.toLocaleString() }}</strong><span>unique items</span></UCard>
-        <UCard class="stat-card"><UIcon name="i-lucide-dollar-sign" /><strong>{{ wholeNumber(monthlySpendTotal) }}</strong><span>total spend</span></UCard>
+        <UCard class="stat-card"><UIcon name="i-lucide-euro" /><strong>{{ wholeNumber(monthlySpendTotal) }}</strong><span>total spend</span></UCard>
       </section>
 
       <UCard class="price-index-panel highlight-panel mb-5 rounded-[22px] shadow-(--shadow) [background:var(--surface)] [border:1px_solid_var(--line)]">
@@ -419,7 +419,7 @@ function unitCurrency(value: number) {
           <svg
             :viewBox="`0 0 ${monthlySpendChart.width} ${monthlySpendChart.height}`"
             role="img"
-            aria-label="Total purchase dollars by month"
+            aria-label="Total purchase EUR by month"
            class="block w-full h-[300px]">
             <title>Monthly purchase spending</title>
             <g class="monthly-spend-grid">

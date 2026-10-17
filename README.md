@@ -34,6 +34,79 @@ browser.
 - Highlights for totals, price changes, stores, categories, and sales
 - Store and category management
 - CSV and XLSX import and export
+- Receipt image/PDF uploads, persistent correction drafts, and immediate or discounted OpenAI Batch extraction
+
+## Receipt uploads
+
+This fork uses **EUR throughout**. Existing amounts are not converted from another
+currency. Mixed-currency reporting and automatic exchange conversion are not supported.
+
+Set the following server settings in `.env` before starting Nuxt or Docker Compose:
+
+```dotenv
+OPENAI_API_KEY=your-api-key
+RECEIPT_AI_PROVIDER=openai
+RECEIPT_AI_MODEL=gpt-6-luna
+```
+
+Open **Receipts → Upload receipts**. Select JPEG, PNG or PDF files, upload them,
+then select pending pages and choose **Immediate** or **Batch** extraction. Uploading
+alone does not call the model. Every PDF page is treated as a separate receipt and
+sent as a native single-page PDF, including its scan; no OCR or JPG conversion is
+required. Files are limited to 20 MiB and PDFs to 50 pages. Up to 100 files can be
+selected per upload operation. Each Batch submission supports 1–100 pages with at
+most 64 MiB of combined source data (and at most 100 MiB of encoded API input).
+
+Immediate mode runs two client workers, with a server-side limit on concurrent
+extraction groups. Leave the page open while submitting immediate requests; after
+an interruption, refresh the queue and select the remaining pages. A request left
+in Extracting after a server restart can be explicitly retried after ten minutes.
+Retries can incur additional charges if a prior provider request already completed.
+
+Batch is explicitly opt-in. OpenAI documents a **50% discount** and a **24-hour
+completion window**, subject to model support and limits. Reopen the queue and use
+**Refresh batches** to collect results. The browser does not need to stay open
+after submission. Cancel a batch from its selected queue item; refresh again after
+cancellation settles. Completed results from expired or cancelled batches are kept;
+missing/failed results can be retried individually. No receipts are approved automatically.
+
+Review the original beside the extracted data, correct missing or uncertain fields,
+and save corrections or approve the receipt. Unknown amounts remain blank. Paid
+price and size represent the **whole receipt line**, including all units bought,
+so normalized price remains meaningful. Brands, variants, quantities, discounts,
+regular prices, confidence estimates, receipt number and original descriptions are
+retained with the reviewed draft. Confidence is a model heuristic, not a calibrated
+probability. Basket-wide discounts and refunds need manual reconciliation; verify
+the line sum against the printed total before approval. A non-EUR extraction cannot
+be approved until its currency is corrected; changing the code does not convert amounts.
+
+Exact source hashes avoid extracting the same upload twice, including PDF page
+identity. Hashes do not recognize rescans or different photos. Review also warns
+about same-day same-store receipts and normalized item-name overlap in saved receipts
+and pending drafts. This is a warning heuristic, not reliable product identification.
+Receipt Box groups purchases by **store and date**; explicitly approving a same-store,
+same-day receipt appends its lines to the existing receipt. Approval is transactional
+and repeat-safe, and stale draft edits are rejected rather than overwriting corrections.
+
+Original page bytes, raw extraction, reviewed draft and approved-entry references
+are retained in PostgreSQL, including after approval or skipping. Back up the database
+to back up these originals. The standard CSV/XLSX export contains approved core fields,
+not originals or the richer extraction records. Rich product-family analytics,
+hierarchical categories and bank-statement integration are not implemented here.
+Deleting/resetting all application data also removes uploads. Treat database backups
+as sensitive: receipt scans can contain personal or payment information.
+
+The provider receives the uploaded receipt content. Immediate calls set `store: false`;
+this is not a promise of zero provider retention. Batch input files expire after two
+days; OpenAI applies its own retention rules to results and other API data. Review
+[OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data) before
+uploading sensitive receipts. Authentication is shared with the rest of Receipt Box;
+do not expose an unauthenticated instance, especially one with a paid API key.
+
+`ReceiptExtractor` is the provider boundary. Only OpenAI is implemented; model and
+Responses-compatible endpoint are configurable through `RECEIPT_AI_MODEL` and
+`OPENAI_BASE_URL`. Gemini or other native APIs require an adapter, not just a different
+key. Model capabilities and pricing should be checked before changing models.
 
 ## Requirements
 
@@ -131,6 +204,10 @@ The application uses these settings:
 | --- | --- | --- |
 | `DATABASE_URL` | At container start | Private PostgreSQL connection string used only by the server |
 | `DATABASE_SOCKET_PATH` | At container start | Optional full Unix socket filename that overrides the URL host and port |
+| `OPENAI_API_KEY` | At container start | Private API key for receipt extraction; never sent to the browser |
+| `RECEIPT_AI_PROVIDER` | At container start | Receipt extractor adapter; currently `openai` only |
+| `RECEIPT_AI_MODEL` | At container start | Vision and structured-output model, default `gpt-6-luna`; Batch mode also requires Batch support |
+| `OPENAI_BASE_URL` | At container start | Optional server-only Responses-compatible API endpoint, default `https://api.openai.com/v1` |
 | `AUTH_MODE` | At container start | Optional authentication mode: `disabled` by default or `oidc` |
 | `NUXT_SESSION_PASSWORD` | At container start | Secret of at least 32 characters used to seal app session cookies; required for OIDC sign-in |
 | `NUXT_OAUTH_OIDC_CLIENT_ID` | At container start | OIDC relying-party client identifier |

@@ -2,6 +2,7 @@ import { normalizeUnit } from '../../shared/utils/units.ts'
 import { normalizeStoreName } from '../../shared/utils/store-name.ts'
 import { normalizeCategory } from '../../shared/utils/category.ts'
 import { maxEntryNotesLength } from '../../shared/utils/entry-notes.ts'
+import { receiptMinute } from '../../shared/utils/product-identity.ts'
 
 export type EntryInput = {
   purchasedOn: string
@@ -15,12 +16,41 @@ export type EntryInput = {
   nonGrocery: boolean
   notes: string | null
   category?: string | null
+  productFamily?: string | null
+  brand?: string | null
+  variant?: string | null
+  quantity?: number | null
+  regularPrice?: number | null
+  discount?: number | null
+  rawDescription?: string | null
+  purchasedTime?: string | null
 }
 
 function optionalNumber(value: unknown) {
   if (value === '' || value === null || value === undefined) return null
   const number = Number(value)
   return Number.isFinite(number) ? number : null
+}
+
+function optionalBoundedNumber(value: unknown, min: number, inclusive: boolean, message: string): number | null | undefined {
+  if (value === undefined) return undefined
+  if (value === '' || value === null) return null
+  const number = Number(value)
+  if (!Number.isFinite(number) || (inclusive ? number < min : number <= min)) {
+    throw createError({ statusCode: 400, statusMessage: message })
+  }
+  return number
+}
+
+function optionalBoundedText(value: unknown, maxLength: number, label: string): string | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (typeof value !== 'string') throw createError({ statusCode: 400, statusMessage: `${label} must be text` })
+  const trimmed = value.trim()
+  if (trimmed.length > maxLength) {
+    throw createError({ statusCode: 400, statusMessage: `${label} must be ${maxLength} characters or fewer` })
+  }
+  return trimmed || null
 }
 
 function truthy(value: unknown) {
@@ -79,6 +109,24 @@ export function normalizeEntry(input: Record<string, unknown>): EntryInput {
     throw createError({ statusCode: 400, statusMessage: error instanceof Error ? error.message : 'Invalid category' })
   }
 
+  const rawFamily = input.productFamily !== undefined ? input.productFamily : input.family
+  const productFamily = optionalBoundedText(rawFamily, 100, 'Product family')
+  const brand = optionalBoundedText(input.brand, 200, 'Brand')
+  const variant = optionalBoundedText(input.variant, 200, 'Variant')
+  const rawDescription = optionalBoundedText(input.rawDescription, 2000, 'Receipt text')
+  const quantity = optionalBoundedNumber(input.quantity, 0, false, 'Quantity must be greater than zero')
+  const regularPrice = optionalBoundedNumber(input.regularPrice, 0, true, 'Regular price must be zero or greater')
+  const discount = optionalBoundedNumber(input.discount, 0, true, 'Discount must be zero or greater')
+
+  let purchasedTime: string | null | undefined
+  if (input.purchasedTime !== undefined) {
+    try {
+      purchasedTime = input.purchasedTime === '' ? null : receiptMinute(input.purchasedTime)
+    } catch (error) {
+      throw createError({ statusCode: 400, statusMessage: error instanceof Error ? error.message : 'Invalid receipt time' })
+    }
+  }
+
   return {
     purchasedOn,
     item,
@@ -90,6 +138,14 @@ export function normalizeEntry(input: Record<string, unknown>): EntryInput {
     saleItem: truthy(input.saleItem ?? input.Sale_Item),
     nonGrocery: truthy(input.nonGrocery ?? input.Non_Grocery),
     notes: notes || null,
-    ...(category === undefined ? {} : { category })
+    ...(category === undefined ? {} : { category }),
+    ...(productFamily === undefined ? {} : { productFamily }),
+    ...(brand === undefined ? {} : { brand }),
+    ...(variant === undefined ? {} : { variant }),
+    ...(quantity === undefined ? {} : { quantity }),
+    ...(regularPrice === undefined ? {} : { regularPrice }),
+    ...(discount === undefined ? {} : { discount }),
+    ...(rawDescription === undefined ? {} : { rawDescription }),
+    ...(purchasedTime === undefined ? {} : { purchasedTime })
   }
 }

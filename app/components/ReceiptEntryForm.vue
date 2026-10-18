@@ -16,6 +16,9 @@ import { entryCsv } from '../utils/csv-export'
 type Suggestion = {
   value: string
   category?: string | null
+  productFamily?: string | null
+  brand?: string | null
+  variant?: string | null
   size?: string | null
   unit?: string | null
   price?: string | null
@@ -36,6 +39,15 @@ type ReceiptLine = {
   category: string | null
   categoryItem: string
   categoryChanged: boolean
+  productFamily: string | null
+  brand: string
+  variant: string
+  quantity: string
+  regularPrice: string
+  discount: string
+  rawDescription: string
+  purchasedTime: string
+  sourceUploadId: string | null
   expanded: boolean
   confirmingRemove: boolean
   itemMenuOpen: boolean
@@ -127,6 +139,7 @@ const backfillSizeSelected = ref(false)
 const backfillUnitSelected = ref(false)
 const { enabled: backfillPromptsEnabled, load: loadBackfillPrompts } = useBackfillPromptPreference()
 const categoryChoices = ref<string[]>([])
+const familyChoices = ref<string[]>([])
 const savedLineSnapshots = reactive(new Map<number, string>())
 const failedAutosaveKey = ref('')
 const discardConfirmOpen = ref(false)
@@ -181,11 +194,13 @@ function initialPurchasedOn() {
   return localDate()
 }
 
-function blankLine(): ReceiptLine {
+function blankLine(purchasedTime = ''): ReceiptLine {
   return {
     metadata: null,
     key: nextKey++, item: '', price: '', size: '', unit: '', saleItem: false,
-    nonGrocery: false, notes: '', category: null, categoryItem: '', categoryChanged: false, expanded: false, confirmingRemove: false, itemMenuOpen: false,
+    nonGrocery: false, notes: '', category: null, categoryItem: '', categoryChanged: false,
+    productFamily: null, brand: '', variant: '', quantity: '', regularPrice: '', discount: '', rawDescription: '', purchasedTime, sourceUploadId: null,
+    expanded: false, confirmingRemove: false, itemMenuOpen: false,
     pendingItemCreation: '', itemBeforeCreation: '', searchTerm: '', suggestions: [], request: 0, backfillKey: '', backfillChecking: false, backfillPrompted: false
   }
 }
@@ -211,6 +226,15 @@ function lineFromEntry(entry: EditableReceipt['entries'][number]): ReceiptLine {
     category: entry.category ?? null,
     categoryItem: entry.item,
     categoryChanged: false,
+    productFamily: entry.productFamily ?? null,
+    brand: entry.brand ?? '',
+    variant: entry.variant ?? '',
+    quantity: entry.quantity == null ? '' : compactNumber(String(entry.quantity)),
+    regularPrice: entry.regularPrice == null ? '' : Number(entry.regularPrice).toFixed(2),
+    discount: entry.discount == null ? '' : Number(entry.discount).toFixed(2),
+    rawDescription: entry.rawDescription ?? '',
+    purchasedTime: entry.purchasedTime ?? '',
+    sourceUploadId: entry.sourceUploadId ?? null,
     expanded: Boolean(entry.notes || entry.nonGrocery),
     confirmingRemove: false,
     itemMenuOpen: false,
@@ -225,16 +249,55 @@ function lineFromEntry(entry: EditableReceipt['entries'][number]): ReceiptLine {
   }
 }
 
+function lineMetadata(line: ReceiptLine): ProductMetadata {
+  return {
+    productFamily: line.productFamily || null,
+    brand: line.brand.trim() || null,
+    variant: line.variant.trim() || null,
+    quantity: line.quantity.trim() === '' ? null : line.quantity.trim(),
+    regularPrice: line.regularPrice.trim() === '' ? null : line.regularPrice.trim(),
+    discount: line.discount.trim() === '' ? null : line.discount.trim(),
+    rawDescription: line.rawDescription.trim() || null,
+    purchasedTime: line.purchasedTime.trim() || null,
+    sourceUploadId: line.sourceUploadId
+  }
+}
+
+function lineHasMeta(line: ReceiptLine) {
+  return Boolean(
+    line.metadata
+    || line.productFamily
+    || line.brand.trim()
+    || line.variant.trim()
+    || line.purchasedTime.trim()
+    || line.sourceUploadId
+  )
+}
+
 const form = reactive({
   purchasedOn: initialPurchasedOn(),
   location: '',
   lines: [blankLine()]
 })
 
+const receiptPurchasedTime = computed(() => {
+  const lineWithTime = form.lines.find(line => line.purchasedTime.trim())
+  return lineWithTime?.purchasedTime ?? ''
+})
+
+function setReceiptPurchasedTime(value: string | number) {
+  const time = String(value ?? '').trim()
+  for (const line of form.lines) {
+    line.purchasedTime = time
+  }
+}
+
 function lineHasContent(line: ReceiptLine) {
   return Boolean(
     line.id || line.item.trim() || line.price !== '' || line.size !== '' || line.unit.trim()
     || line.saleItem || line.nonGrocery || line.notes.trim()
+    || line.productFamily || line.brand.trim() || line.variant.trim()
+    || line.quantity.trim() || line.regularPrice.trim() || line.discount.trim() || line.rawDescription.trim()
   )
 }
 
@@ -757,6 +820,7 @@ onBeforeRouteUpdate(to => confirmDiscardNavigation(to))
 onMounted(() => {
   loadLocations()
   loadCategories()
+  loadFamilies()
   void loadBackfillPrompts()
   window.addEventListener('beforeunload', handleBeforeUnload)
   window.addEventListener('keydown', handleAddLineShortcut, { capture: true })
@@ -805,6 +869,9 @@ function chooseItem(line: ReceiptLine, suggestion: Suggestion) {
   setVisibleItemCategory(line.item, category)
   if (!line.id || line.size === '') line.size = compactNumber(suggestion.size)
   if (!line.id || !line.unit.trim()) line.unit = suggestion.unit ?? ''
+  if (!line.id || !line.productFamily) line.productFamily = suggestion.productFamily ?? line.productFamily
+  if (!line.id || !line.brand.trim()) line.brand = suggestion.brand ?? line.brand
+  if (!line.id || !line.variant.trim()) line.variant = suggestion.variant ?? line.variant
   line.itemMenuOpen = false
   requestAnimationFrame(() => document.querySelector<HTMLInputElement>(`[data-line-price="${line.key}"]`)?.focus())
 }
@@ -859,6 +926,13 @@ function changeCategory(line: ReceiptLine, category: string | null) {
   }
 }
 
+function changeFamily(line: ReceiptLine, family: string | null) {
+  line.productFamily = family
+  if (family && !familyChoices.value.some(choice => choice.toLowerCase() === family.toLowerCase())) {
+    familyChoices.value = [...familyChoices.value, family].sort((a, b) => a.localeCompare(b))
+  }
+}
+
 async function loadCategories() {
   try {
     categoryChoices.value = await $fetch<string[]>(apiUrl('/categories'))
@@ -867,10 +941,26 @@ async function loadCategories() {
   }
 }
 
+async function loadFamilies() {
+  try {
+    const suggestions = await $fetch<Suggestion[]>(apiUrl('/suggestions'), { query: { field: 'family', limit: 20 } })
+    familyChoices.value = suggestions.map(suggestion => suggestion.value).filter(Boolean)
+  } catch {
+    familyChoices.value = []
+  }
+}
+
 function formatPrice(line: ReceiptLine) {
   if (line.price === '') return
   const price = Number(line.price)
   if (Number.isFinite(price) && price >= 0) line.price = price.toFixed(2)
+}
+
+function formatOptionalMoney(line: ReceiptLine, field: 'regularPrice' | 'discount') {
+  const value = line[field].trim()
+  if (value === '') return
+  const number = Number(value)
+  if (Number.isFinite(number) && number >= 0) line[field] = number.toFixed(2)
 }
 
 function focusLineItem(line: ReceiptLine, reveal = false) {
@@ -890,7 +980,7 @@ function addLine(focus = true) {
     if (focus) focusLineItem(existingBlank, true)
     return
   }
-  const line = blankLine()
+  const line = blankLine(receiptPurchasedTime.value)
   form.lines.push(line)
   if (focus) focusLineItem(line, true)
 }
@@ -955,6 +1045,14 @@ function entryBody(line: ReceiptLine, includeCategory = line.categoryChanged && 
     saleItem: line.saleItem,
     nonGrocery: line.nonGrocery,
     notes: line.notes,
+    productFamily: line.productFamily || null,
+    brand: line.brand.trim() || null,
+    variant: line.variant.trim() || null,
+    quantity: line.quantity.trim() || null,
+    regularPrice: line.regularPrice.trim() || null,
+    discount: line.discount.trim() || null,
+    rawDescription: line.rawDescription.trim() || null,
+    purchasedTime: line.purchasedTime.trim() || null,
     ...(includeCategory ? { category: line.category } : {})
   }
 }
@@ -1109,6 +1207,7 @@ async function saveCompletedRows(updateReceiptRoute = true) {
         body: entryBody(line, savesCategory && !categoriesSaved.has(submittedItem))
       })
       line.id = saved.id
+      line.metadata = saved
       currentReceiptId.value = saved.receiptId
       savedLineSnapshots.set(line.key, snapshot)
       if (savesCategory && line.category === savedCategory && line.item.trim() === submittedItem) {
@@ -1271,7 +1370,7 @@ async function deleteReceipt() {
         <p class="mt-[10px] text-(--muted)">{{ hasReceipt ? 'Date and store are locked unless you allow a change.' : 'Choose a store and enter its purchases. Completed rows save automatically.' }}</p>
         <UButton :to="{ path: '/', query: { date: form.purchasedOn } }" label="Return to selected day" icon="i-lucide-calendar-days" color="neutral" variant="outline" class="mt-3" />
       </div>
-      <div class="receipt-meta-fields grid grid-cols-[170px_minmax(230px,310px)] items-end gap-3.5 max-[900.01px]:grid-cols-[170px_minmax(230px,_1fr)] max-[640.01px]:grid-cols-1">
+      <div class="receipt-meta-fields grid grid-cols-[170px_130px_minmax(220px,300px)] items-end gap-3.5 max-[900.01px]:grid-cols-[170px_130px_minmax(200px,_1fr)] max-[640.01px]:grid-cols-1">
         <div v-if="!hasReceipt" class="receipt-date-display grid min-w-0 [align-content:end] gap-[7px]">
           <span class="text-[13px] font-bold text-(--muted)">Date</span>
           <time class="flex min-h-[52px] items-center text-base text-(--ink)" data-receipt-date-display :datetime="form.purchasedOn">{{ dateDisplayLabel(form.purchasedOn) }}</time>
@@ -1279,6 +1378,9 @@ async function deleteReceipt() {
         <UFormField v-else label="Date" name="purchasedOn" required class="field date-field relative grid min-w-0 gap-[5px] text-sm font-medium text-(--muted) max-[640.01px]:grid-cols-[auto_1fr] max-[640.01px]:items-center">
           <UInput v-model="form.purchasedOn" type="date" required size="lg" :disabled="!allowDateChange" />
           <UCheckbox v-model="allowDateChange" label="Allow date change" />
+        </UFormField>
+        <UFormField label="Printed time" name="purchasedTime" class="field relative grid min-w-0 gap-[7px]">
+          <UInput :model-value="receiptPurchasedTime" data-receipt-time type="time" placeholder="HH:MM" size="lg" @update:model-value="setReceiptPurchasedTime" />
         </UFormField>
         <UFormField label="Store" name="location" required class="field receipt-store-field relative grid min-w-0 gap-[7px]" :error="storeError">
           <UInputMenu v-model="form.location" data-receipt-store :items="locationSuggestions.map(suggestion => suggestion.value)" create-item icon="i-lucide-store" placeholder="Choose or add a store…" required size="lg" :disabled="hasReceipt && !allowStoreChange" @create="createLocation" />
@@ -1375,23 +1477,68 @@ async function deleteReceipt() {
           <UButton type="button" label="Cancel" color="neutral" variant="outline" @click="cancelCreateItem(line)" />
           <UButton type="button" :data-confirm-item="line.key" label="Create item" icon="i-lucide-plus" @click="confirmCreateItem(line)" />
         </div>
-        <ProductDetails v-if="line.metadata && !line.expanded" :metadata="line.metadata" compact class="col-span-full pb-1" />
-        <div v-if="line.expanded" class="receipt-line-details col-span-full grid grid-cols-[minmax(180px,1fr)_minmax(240px,2fr)_auto] items-start gap-4.5 p-[4px_0_3px] max-[640.01px]:grid-cols-1">
-          <ProductDetails v-if="line.metadata" :metadata="line.metadata" class="col-span-full border-b border-(--line) pb-3" />
-          <UFormField label="Category" :name="`category-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
-            <div>
-              <CategoryInput :data-line-category="line.key" :aria-describedby="`category-scope-${line.key}`" v-model="line.category" :items="categoryChoices" @change="changeCategory(line, $event)" @tab-next="focusLineNotes(line)" :ui="{ base: 'min-h-11 px-2.5 py-2' }" />
-              <small :id="`category-scope-${line.key}`" class="category-scope-hint leading-[1.35] mt-[5px] block text-xs text-(--muted)">Applies to all purchases of this item.</small>
-            </div>
-          </UFormField>
-          <UFormField label="Notes" :name="`notes-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
-            <UInput :data-line-notes="line.key" v-model="line.notes" placeholder="Optional note" :maxlength="maxEntryNotesLength" :aria-describedby="`notes-character-count-${line.key}`" :ui="{ trailing: 'pointer-events-none' , base: 'min-h-11 px-2.5 py-2' }" @keydown.tab.exact.prevent="focusLineNonGrocery(line)">
-              <template #trailing>
-                <span :id="`notes-character-count-${line.key}`" class="text-xs text-muted tabular-nums" aria-live="polite" role="status">{{ line.notes.length }}/{{ maxEntryNotesLength }}</span>
-              </template>
-            </UInput>
-          </UFormField>
-          <USwitch :data-line-non-grocery="line.key" v-model="line.nonGrocery" label="Non-grocery" class="mt-[27px] max-[640.01px]:mt-0" @keydown.tab.exact.prevent="finishLine(line)" />
+        <ProductDetails v-if="lineHasMeta(line) && !line.expanded" :metadata="lineMetadata(line)" compact class="col-span-full pb-1" />
+        <div v-if="line.expanded" class="receipt-line-details col-span-full grid gap-3.5 rounded-2xl p-3.5 [background:var(--surface-muted)] [border:1px_solid_var(--line)]">
+          <div class="grid grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_minmax(220px,1.5fr)_auto] items-start gap-3.5 max-[900.01px]:grid-cols-2 max-[640.01px]:grid-cols-1">
+            <UFormField label="Category" :name="`category-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
+              <div>
+                <CategoryInput :data-line-category="line.key" :aria-describedby="`category-scope-${line.key}`" v-model="line.category" :items="categoryChoices" @change="changeCategory(line, $event)" @tab-next="focusLineNotes(line)" :ui="{ base: 'min-h-11 px-2.5 py-2' }" />
+                <small :id="`category-scope-${line.key}`" class="category-scope-hint leading-[1.35] mt-[5px] block text-xs text-(--muted)">Applies to all purchases of this item.</small>
+              </div>
+            </UFormField>
+            <UFormField label="Product family" :name="`family-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
+              <div>
+                <CategoryInput
+                  :data-line-family="line.key"
+                  v-model="line.productFamily"
+                  :items="familyChoices"
+                  placeholder="No family"
+                  clear-label="Clear product family"
+                  clear-attr="data-family-clear"
+                  :ui="{ base: 'min-h-11 px-2.5 py-2' }"
+                  @change="changeFamily(line, $event)"
+                />
+                <small class="leading-[1.35] mt-[5px] flex flex-wrap items-center justify-between gap-2 text-xs text-(--muted)">
+                  <span>Groups brands &amp; variants.</span>
+                  <NuxtLink v-if="line.productFamily" :to="{ path: '/items/families', query: { family: line.productFamily } }" class="font-semibold text-(--accent-strong) underline">Compare family</NuxtLink>
+                </small>
+              </div>
+            </UFormField>
+            <UFormField label="Notes" :name="`notes-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
+              <UInput :data-line-notes="line.key" v-model="line.notes" placeholder="Optional note" :maxlength="maxEntryNotesLength" :aria-describedby="`notes-character-count-${line.key}`" :ui="{ trailing: 'pointer-events-none' , base: 'min-h-11 px-2.5 py-2' }" @keydown.tab.exact.prevent="focusLineNonGrocery(line)">
+                <template #trailing>
+                  <span :id="`notes-character-count-${line.key}`" class="text-xs text-muted tabular-nums" aria-live="polite" role="status">{{ line.notes.length }}/{{ maxEntryNotesLength }}</span>
+                </template>
+              </UInput>
+            </UFormField>
+            <USwitch :data-line-non-grocery="line.key" v-model="line.nonGrocery" label="Non-grocery" class="mt-[27px] max-[640.01px]:mt-0" @keydown.tab.exact.prevent="finishLine(line)" />
+          </div>
+          <div class="grid grid-cols-6 gap-3.5 border-t border-(--line) pt-3 max-[900.01px]:grid-cols-3 max-[640.01px]:grid-cols-2">
+            <UFormField label="Brand" :name="`brand-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
+              <UInput :data-line-brand="line.key" v-model="line.brand" placeholder="No brand" maxlength="200" :ui="{ base: 'min-h-11 px-2.5 py-2' }" />
+            </UFormField>
+            <UFormField label="Variant" :name="`variant-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
+              <UInput :data-line-variant="line.key" v-model="line.variant" placeholder="No variant" maxlength="200" :ui="{ base: 'min-h-11 px-2.5 py-2' }" />
+            </UFormField>
+            <UFormField label="Quantity" :name="`quantity-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
+              <UInput :data-line-quantity="line.key" v-model="line.quantity" type="number" min="0.001" step="any" inputmode="decimal" placeholder="1" :ui="{ base: 'min-h-11 px-2.5 py-2' }" />
+            </UFormField>
+            <UFormField label="Regular line total" :name="`regular-price-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
+              <UInput :data-line-regular-price="line.key" v-model="line.regularPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" icon="i-lucide-euro" :ui="{ base: 'min-h-11 px-2.5 py-2' }" @blur="formatOptionalMoney(line, 'regularPrice')" />
+            </UFormField>
+            <UFormField label="Discount" :name="`discount-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
+              <UInput :data-line-discount="line.key" v-model="line.discount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" icon="i-lucide-euro" :ui="{ base: 'min-h-11 px-2.5 py-2' }" @blur="formatOptionalMoney(line, 'discount')" />
+            </UFormField>
+            <UFormField label="Printed time" :name="`purchased-time-${line.key}`" class="field relative grid min-w-0 gap-[7px]">
+              <UInput :data-line-purchased-time="line.key" v-model="line.purchasedTime" type="time" placeholder="HH:MM" :ui="{ base: 'min-h-11 px-2.5 py-2' }" />
+            </UFormField>
+            <UFormField label="Receipt text" :name="`raw-description-${line.key}`" class="field relative col-span-full grid min-w-0 gap-[7px]">
+              <UInput :data-line-raw-description="line.key" v-model="line.rawDescription" placeholder="Raw text printed on receipt" maxlength="2000" :ui="{ base: 'min-h-11 px-2.5 py-2' }" />
+            </UFormField>
+          </div>
+          <div v-if="line.sourceUploadId" class="flex justify-end">
+            <UButton :to="apiUrl(`/receipt-uploads/${line.sourceUploadId}/source`)" external target="_blank" label="Original receipt" icon="i-lucide-external-link" color="neutral" variant="link" size="sm" class="px-0" />
+          </div>
         </div>
         <div v-if="line.confirmingRemove" class="receipt-line-remove-confirmation col-span-full flex items-center justify-end gap-2.5 rounded-xl px-3 py-2.5 [background:color-mix(in_srgb,var(--error),transparent_93%)] [border:1px_solid_color-mix(in_srgb,var(--error),transparent_65%)] max-[640.01px]:grid max-[640.01px]:grid-cols-[1fr_1fr]" role="alert">
           <span><strong>Remove {{ line.item }}?</strong> This saved entry will be permanently deleted.</span>

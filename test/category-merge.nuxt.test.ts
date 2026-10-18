@@ -79,14 +79,15 @@ beforeEach(() => {
     managedCategories = []
     return null
   } })
-  registerEndpoint('/api/items/duplicates', () => ({ items: [{ name: 'Soy milk', uses: 2, category: 'Dairy' }], groups: [], hiddenGroups: [] }))
+  registerEndpoint('/api/items/duplicates', () => ({ items: [{ name: 'Soy milk', uses: 2, category: 'Dairy', productFamily: 'Milk' }], groups: [], hiddenGroups: [] }))
   registerEndpoint('/api/items/dimensions', () => [])
+  registerEndpoint('/api/suggestions', () => [{ value: 'Milk' }, { value: 'Plant milk' }])
   registerEndpoint('/api/items/rename', { method: 'PATCH', handler: async event => {
     const body = await readBody(event)
     requests.push(body)
-    if (!Object.hasOwn(body, 'category')) throw createError({ statusCode: 409, data: { categories: ['Dairy', 'Beverages'] } })
+    if (!Object.hasOwn(body, 'category') && !Object.hasOwn(body, 'productFamily')) throw createError({ statusCode: 409, data: { categories: ['Dairy', 'Beverages'] } })
     if (failResolution) throw createError({ statusCode: 400, statusMessage: 'Could not save category' })
-    return { target: body.target, renamedEntries: body.source === body.target ? 0 : 2, updatedEntries: 0 }
+    return { target: body.target, renamedEntries: body.source === body.target ? 0 : 2, updatedEntries: 0, updatedFamilyEntries: Object.hasOwn(body, 'productFamily') ? 2 : 0 }
   } })
 })
 
@@ -278,6 +279,45 @@ it('lists uncategorized items ordered by purchase history and assigns categories
   await wrapper.get('select[aria-label="Category for Rye bread"]').setValue('Dairy')
   await flushPromises()
   await vi.waitFor(() => expect(wrapper.text()).toContain('No uncategorized items'))
+  wrapper.unmount()
+})
+
+it('changes and clears an item product family for all of its historical entries', async () => {
+  registerEndpoint('/api/items/duplicates', () => ({
+    items: [
+      { name: 'Soy milk', uses: 2, category: 'Dairy', productFamily: 'Milk' },
+      { name: 'Oat milk', uses: 1, category: 'Dairy', productFamily: 'Plant milk' }
+    ],
+    groups: [],
+    hiddenGroups: []
+  }))
+  const wrapper = await mountSuspended(ManagePage, {
+    route: '/data/items',
+    global: { stubs: { UCard: Slot, UFormField: Slot, UButton: Button, USelectMenu: Select, UInput: Input, UModal: Modal, UIcon: true, UCheckbox: true, CategoryInput } }
+  })
+  await flushPromises()
+  await wrapper.get('select[placeholder="Choose an item"]').setValue('Soy milk')
+  await flushPromises()
+  expect((wrapper.get('select[aria-label="Product family"]').element as HTMLSelectElement).value).toBe('Milk')
+  await wrapper.get('select[aria-label="Product family"]').setValue('Plant milk')
+  expect(wrapper.text()).toContain('Set product family for all purchases of “Soy milk” to Plant milk')
+  await wrapper.get('form.item-history-editor').trigger('submit')
+  const confirmation = wrapper.get('[data-dialog="Apply item changes?"]')
+  expect(confirmation.text()).toContain('product family for all purchases of “Soy milk” to “Plant milk”')
+  await confirmation.get('button:last-child').trigger('click')
+  await flushPromises()
+  expect(requests[0]).toMatchObject({ source: 'Soy milk', target: 'Soy milk', productFamily: 'Plant milk' })
+  await vi.waitFor(() => expect(wrapper.text()).toContain('Product family for Soy milk was set to Plant milk for all item history'))
+
+  await wrapper.get('select[placeholder="Choose an item"]').setValue('Soy milk')
+  await flushPromises()
+  await wrapper.get('select[aria-label="Product family"]').setValue('')
+  expect(wrapper.text()).toContain('Set product family for all purchases of “Soy milk” to No family')
+  await wrapper.get('form.item-history-editor').trigger('submit')
+  await wrapper.get('[data-dialog="Apply item changes?"] button:last-child').trigger('click')
+  await flushPromises()
+  expect(requests[1]).toMatchObject({ source: 'Soy milk', target: 'Soy milk', productFamily: null })
+  await vi.waitFor(() => expect(wrapper.text()).toContain('Product family for Soy milk was set to No family for all item history'))
   wrapper.unmount()
 })
 

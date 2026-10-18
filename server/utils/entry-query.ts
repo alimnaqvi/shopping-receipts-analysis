@@ -11,10 +11,14 @@ export async function insertEntry(entry: Omit<GroceryEntry, 'id' | 'receiptId' |
     const [inserted] = await tx<{ id: string }[]>`
       INSERT INTO grocery_entries (
         receipt_id, item, size, unit, price,
-        sale_item, non_grocery, notes
+        sale_item, non_grocery, notes,
+        product_family, brand, variant, raw_description,
+        quantity, regular_price, discount, purchased_time
       ) VALUES (
         ${receiptId}, ${entry.item}, ${entry.size}, ${entry.unit}, ${entry.price}, ${entry.saleItem},
-        ${entry.nonGrocery}, ${entry.notes}
+        ${entry.nonGrocery}, ${entry.notes},
+        ${entry.productFamily ?? null}, ${entry.brand ?? null}, ${entry.variant ?? null}, ${entry.rawDescription ?? null},
+        ${entry.quantity ?? null}, ${entry.regularPrice ?? null}, ${entry.discount ?? null}, ${entry.purchasedTime ?? null}
       )
       RETURNING id
     `
@@ -27,3 +31,4 @@ export async function insertEntry(entry: Omit<GroceryEntry, 'id' | 'receiptId' |
   })
   return row ? publicEntry(row) : undefined
 }
+

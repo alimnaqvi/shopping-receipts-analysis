@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { itemDimensionVariants, renameItemVariants, updateItemDimensions } from '../server/utils/item-query.ts'
+import { itemDimensionVariants, renameItemVariants, updateItemDimensions, updateItemProductFamily } from '../server/utils/item-query.ts'
 
 function fakeTransaction(responses) {
   const queries = []
@@ -63,3 +63,12 @@ test('does not issue an update when the selected package no longer has matches',
   assert.equal(await updateItemDimensions(tx, 'Flour', { scope: 'variant', matchSize: 5, matchUnit: 'lb', size: 80, unit: 'oz' }), 0)
   assert.equal(queries.length, 1)
 })
+
+test('updates product family for all entries of an item where family differs', async () => {
+  const { tx, queries } = fakeTransaction([[{ id: '1' }, { id: '2' }]])
+  assert.equal(await updateItemProductFamily(tx, 'Gouda Slices', 'Cheese slices'), 2)
+  assert.equal(queries.length, 1)
+  assert.match(queries[0].sql, /UPDATE grocery_entries SET product_family = \?, updated_at = now\(\) WHERE item = \? AND product_family IS DISTINCT FROM \?/)
+  assert.deepEqual(queries[0].values, ['Cheese slices', 'Gouda Slices', 'Cheese slices'])
+})
+

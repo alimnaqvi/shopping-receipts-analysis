@@ -21,6 +21,14 @@ export default defineEventHandler(async (event) => {
         item = ${input.item}, size = ${input.size}, unit = ${input.unit}, price = ${input.price},
         sale_item = ${input.saleItem},
         non_grocery = ${input.nonGrocery}, notes = ${input.notes},
+        product_family = CASE WHEN ${input.productFamily !== undefined} THEN ${input.productFamily ?? null} ELSE product_family END,
+        brand = CASE WHEN ${input.brand !== undefined} THEN ${input.brand ?? null} ELSE brand END,
+        variant = CASE WHEN ${input.variant !== undefined} THEN ${input.variant ?? null} ELSE variant END,
+        raw_description = CASE WHEN ${input.rawDescription !== undefined} THEN ${input.rawDescription ?? null} ELSE raw_description END,
+        quantity = CASE WHEN ${input.quantity !== undefined} THEN ${input.quantity ?? null} ELSE quantity END,
+        regular_price = CASE WHEN ${input.regularPrice !== undefined} THEN ${input.regularPrice ?? null} ELSE regular_price END,
+        discount = CASE WHEN ${input.discount !== undefined} THEN ${input.discount ?? null} ELSE discount END,
+        purchased_time = CASE WHEN ${input.purchasedTime !== undefined} THEN ${input.purchasedTime ?? null} ELSE purchased_time END,
         updated_at = now()
       WHERE id = ${id}
       RETURNING id

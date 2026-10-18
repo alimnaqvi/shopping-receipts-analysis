@@ -35,9 +35,9 @@ const Select = defineComponent({ props: ['modelValue', 'items'], emits: ['update
 
 it('shows different milk products separately and supports filtering incompatible price bases', async () => {
   const common = { purchasedOn: '2026-10-01', location: 'REWE', price: '1.20', size: '1', unit: 'L', costPerUnit: null, saleItem: false, productFamily: 'Milk' }
-  registerEndpoint('/api/items/families', () => ({ families: [{ family: 'Milk', itemCount: 3, purchases: 3, totalSpent: '3.6' }], entries: [
+  registerEndpoint('/api/items/families', () => ({ families: [{ family: 'Milk', itemCount: 3, purchases: 3, totalSpent: '3.9' }], entries: [
     { ...common, id: '1', item: 'Ja! Milk 1.5%', brand: 'Ja!', variant: '1.5%' },
-    { ...common, id: '2', item: 'Ja! Milk 3%', brand: 'Ja!', variant: '3%' },
+    { ...common, id: '2', purchasedOn: '2026-10-05', item: 'Ja! Milk 3%', brand: 'Ja!', variant: '3%', price: '1.50' },
     { ...common, id: '3', item: 'Milk powder', brand: 'Milsani', variant: 'Powder', size: '100', unit: 'g' }
   ] }))
   const wrapper = await mountSuspended(FamilyPage, { route: '/items/families?family=Milk', global: { stubs: { USelect: Select, USelectMenu: Select } } })
@@ -47,6 +47,10 @@ it('shows different milk products separately and supports filtering incompatible
   expect(wrapper.text()).toContain('Milk powder')
   expect(wrapper.text()).toContain('Per 100 mL')
   expect(wrapper.text()).toContain('Per 100 g')
+  expect(wrapper.text()).toContain('Cheapest')
+  expect(wrapper.text()).toContain('+25%')
+  expect(wrapper.find('svg[aria-label="Milk family normalized price chart"]').exists()).toBe(true)
+  expect(wrapper.find('table[aria-label="Family purchase history"]').exists()).toBe(true)
   await wrapper.get('select[aria-label="Price basis"]').setValue('volume')
   expect(wrapper.text()).not.toContain('Milk powder')
   wrapper.unmount()

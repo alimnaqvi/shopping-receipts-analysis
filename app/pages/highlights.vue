@@ -41,6 +41,9 @@ type Highlights = {
   monthlySpend: { month: string, totalSpent: number }[]
   priceIndex: { month: string, value: number | null, matchedItems: number }[]
   categoryPriceChanges: { category: string, change: number, startMonth: string, endMonth: string, matchedItems: number }[]
+  familyPriceChanges: { family: string, change: number, startMonth: string, endMonth: string, matchedItems: number, itemCount: number }[]
+  topSpendingItems: { name: string, productFamily: string | null, category: string | null, purchases: number, totalSpent: number, sharePercent: number, lastPurchasedOn: string }[]
+  topSpendingFamilies: { family: string, itemCount: number, purchases: number, totalSpent: number, sharePercent: number, lastPurchasedOn: string }[]
   spendChanges: { month: string, totalSpent: number, change: number | null, priceEffect: number | null, basketEffect: number | null, matchedItems: number }[]
   shrinkflation: {
     item: string
@@ -70,6 +73,8 @@ const periodOptions = computed(() => [
   ...(data.value?.availableYears || []).map(year => ({ label: String(year), value: String(year) }))
 ])
 const maxStoreSpend = computed(() => Math.max(1, ...(data.value?.topStores.map(store => store.totalSpent) || [])))
+const maxItemSpend = computed(() => Math.max(1, ...(data.value?.topSpendingItems.map(item => item.totalSpent) || [])))
+const maxFamilySpend = computed(() => Math.max(1, ...(data.value?.topSpendingFamilies.map(family => family.totalSpent) || [])))
 const selectedSpendMonth = ref<string | null>(null)
 
 watch(selectedPeriod, () => {
@@ -409,6 +414,83 @@ function unitCurrency(value: number) {
           </li>
         </ul>
         <p v-else class="category-price-empty m-0 text-[13px] text-(--muted)">No category has enough regular-price history to compare yet. <NuxtLink to="/data/items">Assign categories to more items</NuxtLink>.</p>
+      </UCard>
+
+      <UCard class="category-price-panel highlight-panel mb-5 rounded-[22px] shadow-(--shadow) [background:var(--surface)] [border:1px_solid_var(--line)]" aria-labelledby="family-price-heading">
+        <div class="monthly-spend-heading mb-4 flex items-end justify-between gap-5 max-[640.01px]:flex-wrap max-[640.01px]:items-start">
+          <div>
+            <p class="mb-1.5 text-xs font-[750] tracking-[.13em] text-(--accent) uppercase">By product family</p>
+            <h2 id="family-price-heading">Product family price movement</h2>
+            <p>Normalized regular-price changes across interchangeable variants in the same product family.</p>
+          </div>
+          <UButton to="/items/families" label="Compare product families" icon="i-lucide-layers" color="neutral" variant="outline" size="sm" />
+        </div>
+        <ul v-if="data.familyPriceChanges?.length" class="category-price-list m-0 grid list-none gap-0 p-0">
+          <li v-for="entry in data.familyPriceChanges.slice(0, 5)" :key="entry.family">
+            <NuxtLink :to="{ path: '/items/families', query: { family: entry.family } }" class="item-history-link inline-flex max-w-full items-center gap-[7px] text-inherit no-underline">
+              <strong>{{ entry.family }}</strong><UIcon name="i-lucide-layers" aria-hidden="true" />
+            </NuxtLink>
+            <span class="text-xs text-(--muted) max-[640.01px]:col-start-1">{{ monthLabel(entry.startMonth) }}–{{ monthLabel(entry.endMonth) }} · {{ entry.matchedItems }} {{ entry.matchedItems === 1 ? 'variant' : 'variants' }}</span>
+            <UBadge class="max-[640.01px]:col-start-2 max-[640.01px]:[grid-row:1_/_span_2]" :label="changeLabel(entry.change)" :color="entry.change > 0 ? 'error' : entry.change < 0 ? 'success' : 'neutral'" variant="soft" />
+          </li>
+        </ul>
+        <p v-else class="category-price-empty m-0 text-[13px] text-(--muted)">No product family has enough multi-month history to compare yet. <NuxtLink to="/data/items">Assign product families to items</NuxtLink>.</p>
+      </UCard>
+
+      <UCard class="highlight-panel mb-5 rounded-[22px] shadow-(--shadow) [background:var(--surface)] [border:1px_solid_var(--line)]" aria-labelledby="top-spending-heading">
+        <div class="monthly-spend-heading mb-4 flex items-end justify-between gap-5 max-[640.01px]:flex-wrap max-[640.01px]:items-start">
+          <div>
+            <p class="mb-1.5 text-xs font-[750] tracking-[.13em] text-(--accent) uppercase">Where your money goes</p>
+            <h2 id="top-spending-heading">Top grocery spending</h2>
+            <p class="mt-1 text-xs text-(--muted)">Which individual items and product families make up the largest share of your grocery spending.</p>
+          </div>
+          <UButton to="/items/families" label="Explore variant prices" icon="i-lucide-layers" color="neutral" variant="outline" size="sm" />
+        </div>
+        <div class="grid grid-cols-2 gap-6 max-[900.01px]:grid-cols-1">
+          <div>
+            <h3 class="m-[0_0_12px] text-sm font-[750] tracking-[.06em] text-(--muted) uppercase">Top items by spend</h3>
+            <ul v-if="data.topSpendingItems?.length" class="store-rank-list m-0 grid list-none gap-[11px] p-0" aria-label="Top items by grocery spend">
+              <li v-for="item in data.topSpendingItems" :key="item.name" class="grid grid-cols-[minmax(130px,_1fr)_minmax(110px,_1fr)] items-end gap-[14px]">
+                <div class="min-w-0">
+                  <NuxtLink :to="itemPath(item.name)" class="item-history-link inline-flex max-w-full items-center gap-[6px] text-inherit no-underline" :title="item.name">
+                    <strong class="truncate">{{ item.name }}</strong><UIcon name="i-lucide-chart-line" aria-hidden="true" />
+                  </NuxtLink>
+                  <p class="m-[2px_0_0] truncate text-xs text-(--muted)">
+                    {{ item.purchases }} {{ item.purchases === 1 ? 'purchase' : 'purchases' }} · {{ item.sharePercent }}% of spend
+                    <template v-if="item.productFamily">
+                      · <NuxtLink :to="{ path: '/items/families', query: { family: item.productFamily } }" class="underline">{{ item.productFamily }}</NuxtLink>
+                    </template>
+                  </p>
+                </div>
+                <div class="grid min-w-0 gap-[3px]">
+                  <span class="store-spend-value block text-right text-xs leading-none whitespace-nowrap text-(--muted) tabular-nums" :style="{ width: `${Math.max(18, (item.totalSpent / maxItemSpend) * 100)}%` }">{{ wholeCurrency(item.totalSpent) }}</span>
+                  <span class="store-bar block h-2 overflow-hidden rounded-full [background:var(--surface-muted)]"><i :style="{ width: `${(item.totalSpent / maxItemSpend) * 100}%` }" class="block h-full rounded-[inherit] bg-(--accent)" /></span>
+                </div>
+              </li>
+            </ul>
+            <p v-else class="m-[12px_0_0] text-[13px] text-(--muted)">No item spending recorded in this period.</p>
+          </div>
+          <div>
+            <h3 class="m-[0_0_12px] text-sm font-[750] tracking-[.06em] text-(--muted) uppercase">Top product families by spend</h3>
+            <ul v-if="data.topSpendingFamilies?.length" class="store-rank-list m-0 grid list-none gap-[11px] p-0" aria-label="Top product families by grocery spend">
+              <li v-for="family in data.topSpendingFamilies" :key="family.family" class="grid grid-cols-[minmax(130px,_1fr)_minmax(110px,_1fr)] items-end gap-[14px]">
+                <div class="min-w-0">
+                  <NuxtLink :to="{ path: '/items/families', query: { family: family.family } }" class="item-history-link inline-flex max-w-full items-center gap-[6px] text-inherit no-underline" :title="family.family">
+                    <strong class="truncate">{{ family.family }}</strong><UIcon name="i-lucide-layers" aria-hidden="true" />
+                  </NuxtLink>
+                  <p class="m-[2px_0_0] truncate text-xs text-(--muted)">
+                    {{ family.itemCount }} {{ family.itemCount === 1 ? 'variant' : 'variants' }} · {{ family.purchases }} {{ family.purchases === 1 ? 'purchase' : 'purchases' }} · {{ family.sharePercent }}% of spend
+                  </p>
+                </div>
+                <div class="grid min-w-0 gap-[3px]">
+                  <span class="store-spend-value block text-right text-xs leading-none whitespace-nowrap text-(--muted) tabular-nums" :style="{ width: `${Math.max(18, (family.totalSpent / maxFamilySpend) * 100)}%` }">{{ wholeCurrency(family.totalSpent) }}</span>
+                  <span class="store-bar block h-2 overflow-hidden rounded-full [background:var(--surface-muted)]"><i :style="{ width: `${(family.totalSpent / maxFamilySpend) * 100}%` }" class="block h-full rounded-[inherit] bg-(--accent)" /></span>
+                </div>
+              </li>
+            </ul>
+            <p v-else class="m-[12px_0_0] text-[13px] text-(--muted)">No product family spending recorded in this period.</p>
+          </div>
+        </div>
       </UCard>
 
       <UCard class="monthly-spend-panel highlight-panel mb-5 rounded-[22px] shadow-(--shadow) [background:var(--surface)] [border:1px_solid_var(--line)]">

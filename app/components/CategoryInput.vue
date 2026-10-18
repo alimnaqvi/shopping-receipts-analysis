@@ -1,7 +1,16 @@
 <script setup lang="ts">
 defineOptions({ inheritAttrs: false })
 
-const props = defineProps<{ items: string[] }>()
+const props = withDefaults(defineProps<{
+  items: string[]
+  placeholder?: string
+  clearLabel?: string
+  clearAttr?: string
+}>(), {
+  placeholder: 'Uncategorized',
+  clearLabel: 'Clear item category',
+  clearAttr: 'data-category-clear'
+})
 const model = defineModel<string | null>({ required: true })
 const emit = defineEmits<{ change: [category:string | null], tabNext: [] }>()
 const open = ref(false)
@@ -19,7 +28,7 @@ function createCategory(value: string | { value: string }) {
 function advanceFromInput(event: KeyboardEvent) {
   event.preventDefault()
   open.value = false
-  const clear = (event.currentTarget as HTMLElement).closest('.category-input')?.querySelector<HTMLButtonElement>('[data-category-clear]')
+  const clear = (event.currentTarget as HTMLElement).closest('.category-input')?.querySelector<HTMLButtonElement>(`[${props.clearAttr}]`)
   if (clear && !clear.disabled) clear.focus()
   else emit('tabNext')
 }
@@ -34,7 +43,7 @@ function advanceFromInput(event: KeyboardEvent) {
       :items="props.items"
       :create-item="{ when: 'always', position: 'top' }"
       :maxlength="100"
-      placeholder="Uncategorized"
+      :placeholder="props.placeholder"
       @update:model-value="selectCategory"
       @create="createCategory"
       @keydown.tab.exact="advanceFromInput"
@@ -44,9 +53,9 @@ function advanceFromInput(event: KeyboardEvent) {
     <UButton
       v-if="model"
       type="button"
-      data-category-clear
+      v-bind="{ [props.clearAttr]: '' }"
       icon="i-lucide-x"
-      aria-label="Clear item category"
+      :aria-label="props.clearLabel"
       color="neutral"
       variant="ghost"
       size="md"
@@ -55,3 +64,4 @@ function advanceFromInput(event: KeyboardEvent) {
     />
   </div>
 </template>
+

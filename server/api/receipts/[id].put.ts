@@ -10,6 +10,7 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody<{
     purchasedOn?: unknown
+    purchasedTime?: unknown
     location?: unknown
     entries?: Record<string, unknown>[]
   }>(event)
@@ -34,7 +35,12 @@ export default defineEventHandler(async (event) => {
     if (entryId !== null && !/^\d+$/.test(entryId)) errors.push(`Line ${index + 1}: Invalid entry id`)
     entryIds.push(entryId)
     try {
-      entries.push(normalizeEntry({ ...line, purchasedOn, location }))
+      entries.push(normalizeEntry({
+        ...(body.purchasedTime === undefined ? {} : { purchasedTime: body.purchasedTime }),
+        ...line,
+        purchasedOn,
+        location
+      }))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invalid line'
       errors.push(`Line ${index + 1}: ${message}`)
@@ -75,17 +81,30 @@ export default defineEventHandler(async (event) => {
           UPDATE grocery_entries SET
             item = ${entry.item}, size = ${entry.size}, unit = ${entry.unit}, price = ${entry.price},
             sale_item = ${entry.saleItem},
-            non_grocery = ${entry.nonGrocery}, notes = ${entry.notes}, updated_at = now()
+            non_grocery = ${entry.nonGrocery}, notes = ${entry.notes},
+            product_family = CASE WHEN ${entry.productFamily !== undefined} THEN ${entry.productFamily ?? null} ELSE product_family END,
+            brand = CASE WHEN ${entry.brand !== undefined} THEN ${entry.brand ?? null} ELSE brand END,
+            variant = CASE WHEN ${entry.variant !== undefined} THEN ${entry.variant ?? null} ELSE variant END,
+            raw_description = CASE WHEN ${entry.rawDescription !== undefined} THEN ${entry.rawDescription ?? null} ELSE raw_description END,
+            quantity = CASE WHEN ${entry.quantity !== undefined} THEN ${entry.quantity ?? null} ELSE quantity END,
+            regular_price = CASE WHEN ${entry.regularPrice !== undefined} THEN ${entry.regularPrice ?? null} ELSE regular_price END,
+            discount = CASE WHEN ${entry.discount !== undefined} THEN ${entry.discount ?? null} ELSE discount END,
+            purchased_time = CASE WHEN ${entry.purchasedTime !== undefined} THEN ${entry.purchasedTime ?? null} ELSE purchased_time END,
+            updated_at = now()
           WHERE id = ${entryId} AND receipt_id = ${id}
         `
       } else {
         await tx`
           INSERT INTO grocery_entries (
             receipt_id, item, size, unit, price,
-            sale_item, non_grocery, notes
+            sale_item, non_grocery, notes,
+            product_family, brand, variant, raw_description,
+            quantity, regular_price, discount, purchased_time
           ) VALUES (
             ${id}, ${entry.item}, ${entry.size}, ${entry.unit}, ${entry.price}, ${entry.saleItem},
-            ${entry.nonGrocery}, ${entry.notes}
+            ${entry.nonGrocery}, ${entry.notes},
+            ${entry.productFamily ?? null}, ${entry.brand ?? null}, ${entry.variant ?? null}, ${entry.rawDescription ?? null},
+            ${entry.quantity ?? null}, ${entry.regularPrice ?? null}, ${entry.discount ?? null}, ${entry.purchasedTime ?? null}
           )
         `
       }

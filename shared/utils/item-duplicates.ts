@@ -3,7 +3,9 @@ export type ItemNameSummary = {
   uses: number
   lastUsed: string
   category?: string | null
+  productFamily?: string | null
 }
+
 
 export type ItemDuplicateGroup = {
   id: string

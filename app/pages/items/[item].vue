@@ -71,7 +71,7 @@ watch(selectedBasis, () => { selectedPoint.value = null })
 
 const visiblePoints = computed(() => pricePoints.value.filter(point => point.basis === selectedBasis.value))
 const newestFirst = computed(() => [...visiblePoints.value].reverse())
-const productMetadata = computed(() => [...(data.value?.entries ?? [])].reverse().find(entry => entry.productFamily || entry.brand || entry.variant) ?? {})
+const productMetadata = computed<ProductMetadata>(() => [...(data.value?.entries ?? [])].reverse().find(entry => entry.productFamily || entry.brand || entry.variant) ?? {})
 
 const chartPoints = computed(() => {
   const points = visiblePoints.value
@@ -209,7 +209,17 @@ function packageLabel(entry: HistoryEntry) {
         <h1 class="leading-[1.04] text-[clamp(34px,3.5vw,42px)]">{{ data?.item || routeItem }}</h1>
         <p v-if="data">{{ data.entries.length.toLocaleString() }} recorded {{ data.entries.length === 1 ? 'purchase' : 'purchases' }}</p>
       </div>
-      <UButton to="/history/receipts/calendar" label="Back to history" icon="i-lucide-arrow-left" color="neutral" variant="outline" />
+      <div class="flex flex-wrap gap-2">
+        <UButton
+          v-if="productMetadata.productFamily"
+          :to="{ path: '/items/families', query: { family: productMetadata.productFamily } }"
+          :label="`Compare ${productMetadata.productFamily} family`"
+          icon="i-lucide-layers"
+          color="primary"
+          variant="soft"
+        />
+        <UButton to="/history/receipts/calendar" label="Back to history" icon="i-lucide-arrow-left" color="neutral" variant="outline" />
+      </div>
     </header>
 
     <div v-if="pending" class="grid min-h-55 place-items-center gap-1.5 rounded-2xl border border-dashed border-(--line) p-9 text-center text-(--muted)">Loading item history…</div>

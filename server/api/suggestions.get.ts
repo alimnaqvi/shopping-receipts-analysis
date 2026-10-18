@@ -43,16 +43,29 @@ export default defineEventHandler(async (event) => {
     `
   }
 
+  if (field === 'family') {
+    return sql`
+      SELECT min(product_family) AS value, count(*)::int AS uses, max(purchased_on) AS last_used
+      FROM grocery_entry_details
+      WHERE product_family IS NOT NULL AND (${search} = '' OR product_family ILIKE ${`%${search}%`})
+      GROUP BY lower(product_family)
+      ORDER BY count(*) DESC, max(purchased_on) DESC, lower(min(product_family))
+      LIMIT ${limit}
+    `
+  }
+
   return sql`
     WITH latest_items AS (
       SELECT DISTINCT ON (lower(item))
         item AS value, location, size, unit, price, cost_per_unit, category,
+        product_family, brand, variant,
         purchased_on AS last_used
       FROM grocery_entry_details
       WHERE (${search} = '' OR item ILIKE ${`%${search}%`})
       ORDER BY lower(item), purchased_on DESC, id DESC
     )
-    SELECT value, location, size, unit, price, cost_per_unit, category, last_used
+    SELECT value, location, size, unit, price, cost_per_unit, category,
+      product_family, brand, variant, last_used
     FROM latest_items
     ORDER BY
       CASE
@@ -65,3 +78,4 @@ export default defineEventHandler(async (event) => {
     LIMIT ${limit}
   `
 })
+

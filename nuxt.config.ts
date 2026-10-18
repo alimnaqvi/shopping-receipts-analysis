@@ -10,6 +10,7 @@ const assetRoute = `${appBaseURL === '/' ? '' : appBaseURL.replace(/\/$/, '')}/_
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-08-01',
+  telemetry: false,
   // The browser owns all rendering and navigation. Nitro exists only for /api.
   ssr: false,
   devtools: { enabled: true },

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { maxEntryNotesLength } from '../../shared/utils/entry-notes'
+import type { ProductMetadata } from '../../shared/types/product'
 
-type Entry = {
+type Entry = ProductMetadata & {
   id: string
   purchasedOn: string
   item: string
@@ -28,7 +29,17 @@ type ReceiptList = { receipts: Receipt[], total: number }
 type ReceiptDate = { date: string, receiptCount: number, itemCount: number }
 type ReceiptDates = { dates: ReceiptDate[] }
 type CalendarDay = ReceiptDate & { day: number, currentMonth: boolean }
-type EditableEntry = Omit<Entry, 'unit'> & { unit: string }
+type EditableEntry = Omit<Entry, 'unit' | 'productFamily' | 'brand' | 'variant' | 'quantity' | 'regularPrice' | 'discount' | 'purchasedTime' | 'rawDescription'> & {
+  unit: string
+  productFamily: string | null
+  brand: string
+  variant: string
+  quantity: string
+  regularPrice: string
+  discount: string
+  purchasedTime: string
+  rawDescription: string
+}
 type Store = { id: string, name: string, uses: number }
 type SortKey = 'purchasedOn' | 'item' | 'location' | 'size' | 'price' | 'costPerUnit'
 type ChangeFilter = 'all' | 'changed' | 'higher' | 'lower' | 'sale'
@@ -116,7 +127,9 @@ watch(receiptsPending, (isPending, _previous, onCleanup) => {
 }, { immediate: true })
 const { data: receiptDates, refresh: refreshReceiptDates } = await useFetch<ReceiptDates>(apiUrl('/receipts/dates'))
 const { data: stores, refresh: refreshStores } = await useFetch<Store[]>(apiUrl('/stores'))
-const { data: categories } = await useFetch<string[]>(apiUrl('/categories'))
+const { data: categories, refresh: refreshCategories } = await useFetch<string[]>(apiUrl('/categories'))
+const { data: familySuggestions, refresh: refreshFamilies } = await useFetch<Array<{ value: string }>>(apiUrl('/suggestions'), { query: { field: 'family' } })
+const familyOptions = computed(() => (familySuggestions.value || []).map(item => item.value))
 const editing = ref<EditableEntry | null>(null)
 const editError = ref('')
 const saving = ref(false)
@@ -276,6 +289,15 @@ function changeTitle(entry: Entry) {
 function startEdit(entry: Entry | ReceiptEntry) {
   editing.value = {
     ...entry,
+    category: entry.category ?? null,
+    productFamily: entry.productFamily ?? null,
+    brand: entry.brand ?? '',
+    variant: entry.variant ?? '',
+    quantity: entry.quantity === null || entry.quantity === undefined ? '' : String(Number(entry.quantity)),
+    regularPrice: entry.regularPrice === null || entry.regularPrice === undefined ? '' : String(Number(entry.regularPrice)),
+    discount: entry.discount === null || entry.discount === undefined ? '' : String(Number(entry.discount)),
+    purchasedTime: entry.purchasedTime ?? '',
+    rawDescription: entry.rawDescription ?? '',
     size: entry.size === null ? null : String(Number(entry.size)),
     unit: entry.unit || '',
     previousPrice: 'previousPrice' in entry ? entry.previousPrice : null,
@@ -334,7 +356,7 @@ async function saveEdit() {
   try {
     await $fetch(apiUrl(`/entries/${editing.value.id}`), { method: 'PUT', body: editing.value })
     await closeEdit()
-    await Promise.all([refresh(), refreshReceipts(), refreshReceiptDates(), refreshStores()])
+    await Promise.all([refresh(), refreshReceipts(), refreshReceiptDates(), refreshStores(), refreshCategories(), refreshFamilies()])
   } catch (error: any) {
     editError.value = error?.data?.statusMessage || error?.message || 'Could not save changes'
   } finally {
@@ -627,9 +649,12 @@ async function confirmRemoveEntry() {
     <UModal :open="Boolean(editing)" title="Edit purchase" :dismissible="!saving" :close="!saving" @update:open="!$event && closeEdit()">
       <template #body>
         <form v-if="editing" id="edit-purchase-form" class="edit-dialog max-h-[calc(100dvh-40px)] w-[min(650px,100%)] overflow-auto p-7 [border:1px_solid_var(--line)] rounded-3xl bg-(--surface) shadow-(--shadow) max-[640.01px]:p-[22px]" @submit.prevent="saveEdit">
-          <div class="form-grid grid grid-cols-2 gap-4">
+          <div class="form-grid grid grid-cols-3 gap-4 max-[640.01px]:grid-cols-1">
             <UFormField label="Date" name="edit-date" required class="field relative grid min-w-0 gap-[7px]">
               <UInput id="edit-date" v-model="editing.purchasedOn" type="date" required />
+            </UFormField>
+            <UFormField label="Printed time" name="edit-time" class="field relative grid min-w-0 gap-[7px]">
+              <UInput id="edit-time" v-model="editing.purchasedTime" type="time" placeholder="HH:MM" />
             </UFormField>
             <UFormField label="Store" name="edit-store" required class="field relative grid min-w-0 gap-[7px]">
               <UInputMenu id="edit-store" v-model="editing.location" :items="(stores || []).map(store => store.name)" create-item placeholder="Choose or add a store…" required />
@@ -638,6 +663,25 @@ async function confirmRemoveEntry() {
           <UFormField label="Item" name="edit-item" required class="field relative grid min-w-0 gap-[7px]">
             <UInput id="edit-item" v-model="editing.item" type="text" required />
           </UFormField>
+          <div class="form-grid grid grid-cols-2 gap-4 max-[640.01px]:grid-cols-1">
+            <UFormField label="Category" name="edit-category" class="field relative grid min-w-0 gap-[7px]">
+              <CategoryInput id="edit-category" v-model="editing.category" :items="categories || []" aria-label="Category" />
+            </UFormField>
+            <UFormField label="Product family" name="edit-family" class="field relative grid min-w-0 gap-[7px]">
+              <CategoryInput id="edit-family" v-model="editing.productFamily" :items="familyOptions" aria-label="Product family" placeholder="No family" clear-label="Clear product family" clear-attr="data-family-clear" />
+            </UFormField>
+          </div>
+          <div class="form-grid grid grid-cols-3 gap-4 max-[640.01px]:grid-cols-1">
+            <UFormField label="Brand" name="edit-brand" class="field relative grid min-w-0 gap-[7px]">
+              <UInput id="edit-brand" v-model="editing.brand" type="text" placeholder="Brand…" />
+            </UFormField>
+            <UFormField label="Variant" name="edit-variant" class="field relative grid min-w-0 gap-[7px]">
+              <UInput id="edit-variant" v-model="editing.variant" type="text" placeholder="Variant…" />
+            </UFormField>
+            <UFormField label="Quantity" name="edit-quantity" class="field relative grid min-w-0 gap-[7px]">
+              <UInput id="edit-quantity" v-model="editing.quantity" type="number" min="0" step="any" placeholder="1" />
+            </UFormField>
+          </div>
           <div class="form-grid grid grid-cols-3 gap-4">
             <UFormField label="Size" name="edit-size" class="field relative grid min-w-0 gap-[7px]">
               <UInput id="edit-size" v-model="editingSize" type="number" step="any" />
@@ -647,10 +691,21 @@ async function confirmRemoveEntry() {
               <UInput id="edit-price" v-model="editing.price" type="number" min="0" step="0.01" required />
             </UFormField>
           </div>
+          <div class="form-grid grid grid-cols-2 gap-4 max-[640.01px]:grid-cols-1">
+            <UFormField label="Regular line total" name="edit-regular-price" class="field relative grid min-w-0 gap-[7px]">
+              <UInput id="edit-regular-price" v-model="editing.regularPrice" type="number" min="0" step="0.01" placeholder="0.00" />
+            </UFormField>
+            <UFormField label="Discount" name="edit-discount" class="field relative grid min-w-0 gap-[7px]">
+              <UInput id="edit-discount" v-model="editing.discount" type="number" min="0" step="0.01" placeholder="0.00" />
+            </UFormField>
+          </div>
           <div class="quick-toggles mt-5 flex flex-wrap gap-2.5">
             <UCheckbox v-model="editing.saleItem" label="Sale item" />
             <UCheckbox v-model="editing.nonGrocery" label="Non-grocery" />
           </div>
+          <UFormField label="Receipt text" name="edit-raw-description" class="field relative grid min-w-0 gap-[7px]">
+            <UInput id="edit-raw-description" v-model="editing.rawDescription" type="text" placeholder="Original receipt line text…" />
+          </UFormField>
           <UFormField label="Notes" name="edit-notes" class="field relative grid min-w-0 gap-[7px]">
             <UTextarea id="edit-notes" v-model="editingNotes" :rows="3" :maxlength="maxEntryNotesLength" aria-describedby="edit-notes-character-count" :ui="{ trailing: 'pointer-events-none' }">
               <template #trailing>

@@ -1,6 +1,15 @@
 import { db, publicEntry, type GroceryEntry } from '../utils/db'
 import { priceStability, priceTrend } from '../../shared/utils/core-price'
-import { categoryPriceChanges, priceIndex, shrinkflation, spendChanges, type HighlightObservation } from '../../shared/utils/highlight-reports'
+import {
+  categoryPriceChanges,
+  familyPriceChanges,
+  priceIndex,
+  shrinkflation,
+  spendChanges,
+  topSpendingFamilies,
+  topSpendingItems,
+  type HighlightObservation
+} from '../../shared/utils/highlight-reports'
 
 type MoverRow = GroceryEntry & {
   previousPurchasedOn: string | Date
@@ -30,6 +39,7 @@ type ReportRow = {
   costPerUnit: string | null
   saleItem: boolean
   category: string | null
+  productFamily: string | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -205,7 +215,7 @@ export default defineEventHandler(async (event) => {
       LIMIT 12
     `,
     sql<ReportRow[]>`
-      SELECT purchased_on, item, size::text, unit, price::text, cost_per_unit::text, sale_item, category
+      SELECT purchased_on, item, size::text, unit, price::text, cost_per_unit::text, sale_item, category, product_family
       FROM grocery_entry_details
       WHERE NOT non_grocery
         AND (${startDate}::date IS NULL OR purchased_on >= ${startDate}::date)
@@ -213,7 +223,7 @@ export default defineEventHandler(async (event) => {
       ORDER BY purchased_on, id
     `,
     sql<ReportRow[]>`
-      SELECT purchased_on, item, size::text, unit, price::text, cost_per_unit::text, sale_item, category
+      SELECT purchased_on, item, size::text, unit, price::text, cost_per_unit::text, sale_item, category, product_family
       FROM grocery_entry_details
       WHERE NOT non_grocery
         AND (${endDate}::date IS NULL OR purchased_on < ${endDate}::date)
@@ -261,7 +271,8 @@ export default defineEventHandler(async (event) => {
     price: Number(row.price),
     costPerUnit: row.costPerUnit === null ? null : Number(row.costPerUnit),
     saleItem: row.saleItem,
-    category: row.category
+    category: row.category,
+    productFamily: row.productFamily
   }))
   const reportObservations = observations(reportRows)
   const shrinkStart = startDate
@@ -309,6 +320,9 @@ export default defineEventHandler(async (event) => {
     monthlySpend,
     priceIndex: priceIndex(reportObservations),
     categoryPriceChanges: categoryPriceChanges(reportObservations),
+    familyPriceChanges: familyPriceChanges(reportObservations),
+    topSpendingItems: topSpendingItems(reportObservations, 10),
+    topSpendingFamilies: topSpendingFamilies(reportObservations, 10),
     spendChanges: spendChanges(reportObservations),
     shrinkflation: shrinkflation(observations(shrinkRows)).filter(entry =>
       (!shrinkStart || entry.purchasedOn >= shrinkStart) && (!shrinkEnd || entry.purchasedOn < shrinkEnd))

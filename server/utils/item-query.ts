@@ -94,3 +94,14 @@ export async function renameItemVariants(tx: Transaction, target: string, source
   }
   return mergedEntries
 }
+
+export async function updateItemProductFamily(tx: Transaction, item: string, productFamily: string | null) {
+  const updated = await tx<{ id: string }[]>`
+    UPDATE grocery_entries
+    SET product_family = ${productFamily}, updated_at = now()
+    WHERE item = ${item} AND product_family IS DISTINCT FROM ${productFamily}
+    RETURNING id::text
+  `
+  return updated.length
+}
+

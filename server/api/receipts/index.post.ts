@@ -7,6 +7,7 @@ import { applyCategoryAssignments, categoryAssignments, lockItemWrites } from '.
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
     purchasedOn?: unknown
+    purchasedTime?: unknown
     location?: unknown
     entries?: Record<string, unknown>[]
   }>(event)
@@ -28,7 +29,12 @@ export default defineEventHandler(async (event) => {
   const errors: string[] = []
   body.entries.forEach((line, index) => {
     try {
-      entries.push(normalizeEntry({ ...line, purchasedOn, location }))
+      entries.push(normalizeEntry({
+        ...(body.purchasedTime === undefined ? {} : { purchasedTime: body.purchasedTime }),
+        ...line,
+        purchasedOn,
+        location
+      }))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invalid line'
       errors.push(`Line ${index + 1}: ${message}`)
@@ -52,7 +58,15 @@ export default defineEventHandler(async (event) => {
       price: entry.price,
       sale_item: entry.saleItem,
       non_grocery: entry.nonGrocery,
-      notes: entry.notes
+      notes: entry.notes,
+      product_family: entry.productFamily ?? null,
+      brand: entry.brand ?? null,
+      variant: entry.variant ?? null,
+      raw_description: entry.rawDescription ?? null,
+      quantity: entry.quantity ?? null,
+      regular_price: entry.regularPrice ?? null,
+      discount: entry.discount ?? null,
+      purchased_time: entry.purchasedTime ?? null
     }))
     await tx`INSERT INTO grocery_entries ${tx(rows)}`
     await applyCategoryAssignments(tx, assignments)

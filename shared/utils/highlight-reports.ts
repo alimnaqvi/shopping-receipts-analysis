@@ -1,3 +1,5 @@
+import { normalizedHistoricalPrice } from './normalized-price.ts'
+
 export type HighlightObservation = {
   purchasedOn: string
   item: string
@@ -7,10 +9,36 @@ export type HighlightObservation = {
   costPerUnit: number | null
   saleItem: boolean
   category?: string | null
+  productFamily?: string | null
 }
 
 export type PriceIndexPoint = { month: string, value: number | null, matchedItems: number }
 export type CategoryPriceChange = { category: string, change: number, startMonth: string, endMonth: string, matchedItems: number }
+export type FamilyPriceChange = {
+  family: string
+  change: number
+  startMonth: string
+  endMonth: string
+  matchedItems: number
+  itemCount: number
+}
+export type TopSpendingItem = {
+  name: string
+  productFamily: string | null
+  category: string | null
+  purchases: number
+  totalSpent: number
+  sharePercent: number
+  lastPurchasedOn: string
+}
+export type TopSpendingFamily = {
+  family: string
+  itemCount: number
+  purchases: number
+  totalSpent: number
+  sharePercent: number
+  lastPurchasedOn: string
+}
 export type SpendChangePoint = {
   month: string
   totalSpent: number
@@ -133,6 +161,127 @@ export function categoryPriceChanges(rows: HighlightObservation[]): CategoryPric
   }).sort((a, b) => Math.abs(b.change) - Math.abs(a.change) || a.category.localeCompare(b.category))
 }
 
+export function familyPriceChanges(rows: HighlightObservation[]): FamilyPriceChange[] {
+  const families = new Map<string, { name: string, observations: HighlightObservation[] }>()
+  for (const row of rows) {
+    if (!row.productFamily) continue
+    const key = itemKey(row.productFamily)
+    const existing = families.get(key)
+    if (existing) {
+      existing.name = row.productFamily
+      existing.observations.push(row)
+    } else {
+      families.set(key, { name: row.productFamily, observations: [row] })
+    }
+  }
+
+  return [...families.values()].flatMap(({ name: family, observations }) => {
+    const allItems = new Set(observations.map(row => itemKey(row.item)))
+    const byBasis = new Map<string, Array<{ month: string, value: number, item: string }>>()
+    for (const row of observations) {
+      if (row.saleItem || row.price <= 0) continue
+      const normalized = normalizedHistoricalPrice(row.price, row.size, row.unit, row.costPerUnit)
+      const basis = normalized?.basis ?? (row.size !== null && row.unit ? `package:${row.size}:${row.unit.toUpperCase()}` : null)
+      const value = normalized?.value ?? row.price
+      if (!basis) continue
+      const entry = { month: monthOf(row.purchasedOn), value, item: itemKey(row.item) }
+      const list = byBasis.get(basis)
+      if (list) list.push(entry)
+      else byBasis.set(basis, [entry])
+    }
+
+    const candidates = [...byBasis.entries()]
+      .map(([basis, entries]) => ({
+        basis,
+        entries,
+        months: [...new Set(entries.map(entry => entry.month))].sort()
+      }))
+      .filter(candidate => candidate.months.length >= 2)
+      .sort((a, b) => b.entries.length - a.entries.length || a.basis.localeCompare(b.basis))
+
+    const best = candidates[0]
+    if (!best) return []
+    const monthlyPrices = groupedMedians(best.entries, entry => entry.month, entry => entry.value)
+    const startMonth = best.months[0]!
+    const endMonth = best.months.at(-1)!
+    const startPrice = monthlyPrices.get(startMonth)!
+    const endPrice = monthlyPrices.get(endMonth)!
+    return [{
+      family,
+      change: Number((((endPrice - startPrice) / startPrice) * 100).toFixed(2)),
+      startMonth,
+      endMonth,
+      matchedItems: new Set(best.entries.map(entry => entry.item)).size,
+      itemCount: allItems.size
+    }]
+  }).sort((a, b) => Math.abs(b.change) - Math.abs(a.change) || a.family.localeCompare(b.family))
+}
+
+export function topSpendingItems(rows: HighlightObservation[], limit = 10): TopSpendingItem[] {
+  const validRows = rows.filter(row => row.price > 0)
+  if (!validRows.length) return []
+  const overallTotal = validRows.reduce((sum, row) => sum + row.price, 0)
+  const groups = new Map<string, TopSpendingItem>()
+  for (const row of validRows) {
+    const key = itemKey(row.item)
+    const existing = groups.get(key)
+    const current: TopSpendingItem = existing ?? {
+      name: row.item,
+      productFamily: null,
+      category: null,
+      purchases: 0,
+      totalSpent: 0,
+      sharePercent: 0,
+      lastPurchasedOn: row.purchasedOn
+    }
+    current.name = row.item
+    if (row.productFamily) current.productFamily = row.productFamily
+    if (row.category) current.category = row.category
+    current.purchases += 1
+    current.totalSpent = Number((current.totalSpent + row.price).toFixed(2))
+    if (row.purchasedOn > current.lastPurchasedOn) current.lastPurchasedOn = row.purchasedOn
+    groups.set(key, current)
+  }
+
+  return [...groups.values()].map(item => ({
+    ...item,
+    sharePercent: Number(((item.totalSpent / overallTotal) * 100).toFixed(1))
+  })).sort((a, b) => b.totalSpent - a.totalSpent || b.purchases - a.purchases || a.name.localeCompare(b.name)).slice(0, limit)
+}
+
+export function topSpendingFamilies(rows: HighlightObservation[], limit = 10): TopSpendingFamily[] {
+  const validRows = rows.filter(row => row.price > 0)
+  if (!validRows.length) return []
+  const overallTotal = validRows.reduce((sum, row) => sum + row.price, 0)
+  const groups = new Map<string, TopSpendingFamily & { items: Set<string> }>()
+  for (const row of validRows) {
+    if (!row.productFamily) continue
+    const key = itemKey(row.productFamily)
+    const existing = groups.get(key)
+    const current = existing ?? {
+      family: row.productFamily,
+      itemCount: 0,
+      purchases: 0,
+      totalSpent: 0,
+      sharePercent: 0,
+      lastPurchasedOn: row.purchasedOn,
+      items: new Set<string>()
+    }
+    current.family = row.productFamily
+    current.items.add(itemKey(row.item))
+    current.itemCount = current.items.size
+    current.purchases += 1
+    current.totalSpent = Number((current.totalSpent + row.price).toFixed(2))
+    if (row.purchasedOn > current.lastPurchasedOn) current.lastPurchasedOn = row.purchasedOn
+    groups.set(key, current)
+  }
+
+  return [...groups.values()].map(({ items: _items, ...family }) => ({
+    ...family,
+    sharePercent: Number(((family.totalSpent / overallTotal) * 100).toFixed(1))
+  })).sort((a, b) => b.totalSpent - a.totalSpent || b.purchases - a.purchases || a.family.localeCompare(b.family)).slice(0, limit)
+}
+
 export function spendChanges(rows: HighlightObservation[]): SpendChangePoint[] {
   const months = [...new Set(rows.map(row => monthOf(row.purchasedOn)))].sort()
   return months.map((month, index) => {
@@ -213,4 +362,3 @@ export function sparklinePoints(values: number[], width = 120, height = 32) {
     return `${Number(x.toFixed(1))},${Number(y.toFixed(1))}`
   }).join(' ')
 }
-import { normalizedHistoricalPrice } from './normalized-price.ts'

@@ -53,6 +53,10 @@ describe('receipt row autosave state', () => {
     assert.equal(receiptLineIsComplete({ ...line, size: '-1' }), false)
     assert.equal(receiptLineIsComplete({ ...line, size: 'not-a-size' }), false)
     assert.equal(receiptLineIsComplete({ ...line, size: '' }), true)
+    assert.equal(receiptLineIsComplete({ ...line, quantity: '0' }), false)
+    assert.equal(receiptLineIsComplete({ ...line, regularPrice: '-1' }), false)
+    assert.equal(receiptLineIsComplete({ ...line, discount: '-0.5' }), false)
+    assert.equal(receiptLineIsComplete({ ...line, quantity: '2', regularPrice: '4.49', discount: '0.50' }), true)
   })
 
   test('tracks receipt metadata and every persisted row field', () => {
@@ -61,6 +65,21 @@ describe('receipt row autosave state', () => {
     assert.notEqual(snapshot, receiptLineSaveSnapshot('2026-08-07', 'Market', line))
     assert.notEqual(snapshot, receiptLineSaveSnapshot('2026-08-06', 'Other Store', line))
     assert.notEqual(snapshot, receiptLineSaveSnapshot('2026-08-06', 'Market', { ...line, notes: 'Coupon' }))
+    assert.notEqual(snapshot, receiptLineSaveSnapshot('2026-08-06', 'Market', {
+      ...line,
+      productFamily: 'Milk',
+      brand: 'Ja!',
+      variant: '1.5%',
+      quantity: '2',
+      regularPrice: '4.49',
+      discount: '0.50',
+      rawDescription: 'JA MILCH',
+      purchasedTime: '14:35'
+    }))
+    assert.notEqual(
+      receiptLineSaveSnapshot('2026-08-06', 'Market', { ...line, productFamily: null }),
+      receiptLineSaveSnapshot('2026-08-06', 'Market', { ...line, productFamily: 'Milk' })
+    )
   })
 })
 

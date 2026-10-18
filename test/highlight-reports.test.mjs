@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { categoryPriceChanges, priceIndex, shrinkflation, sparklinePoints, spendChanges } from '../shared/utils/highlight-reports.ts'
+import {
+  categoryPriceChanges,
+  familyPriceChanges,
+  priceIndex,
+  shrinkflation,
+  sparklinePoints,
+  spendChanges,
+  topSpendingFamilies,
+  topSpendingItems
+} from '../shared/utils/highlight-reports.ts'
 
 function row(overrides = {}) {
   return {
@@ -78,6 +87,62 @@ describe('categoryPriceChanges', () => {
       row({ category: 'Dairy', purchasedOn: '2026-02-10', price: 11 }),
       row({ item: 'Tea', category: 'Dairy', purchasedOn: '2026-02-10', price: 11 })
     ]), [])
+  })
+})
+
+describe('familyPriceChanges', () => {
+  test('reports normalized regular-price changes across interchangeable variants in a product family', () => {
+    const result = familyPriceChanges([
+      row({ item: 'Ja! Gouda Slices', productFamily: 'cheese slices', size: 400, unit: 'g', price: 2.00, costPerUnit: null }),
+      row({ item: 'Milsani Gouda Slices', productFamily: 'Cheese slices', purchasedOn: '2026-02-10', size: 400, unit: 'g', price: 2.40, costPerUnit: null }),
+      row({ item: 'Old Amsterdam Slices', productFamily: 'Cheese slices', purchasedOn: '2026-02-12', size: 400, unit: 'g', price: 2.40, costPerUnit: null }),
+      row({ item: 'Cheese pack', productFamily: 'Cheese slices', size: 1, unit: 'ea', price: 2.00, costPerUnit: null }),
+      row({ item: 'Cheese pack', productFamily: 'Cheese slices', purchasedOn: '2026-02-10', size: 1, unit: 'ea', price: 2.10, costPerUnit: null }),
+      row({ item: 'Promo Gouda Slices', productFamily: 'Cheese slices', purchasedOn: '2026-02-15', size: 400, unit: 'g', price: 1.50, costPerUnit: null, saleItem: true }),
+      row({ item: 'Bread', productFamily: 'Bread', size: 1, unit: 'loaf', price: 2.00, costPerUnit: null }),
+      row({ item: 'Bread', productFamily: 'Bread', purchasedOn: '2026-02-10', size: 1, unit: 'loaf', price: 2.20, costPerUnit: null }),
+      row({ item: 'Mystery item', productFamily: 'Mystery', size: null, unit: null, price: 2.00, costPerUnit: null }),
+      row({ item: 'Single month milk', productFamily: 'Milk', size: 1, unit: 'L', price: 1.20, costPerUnit: null }),
+      row({ item: 'No family item', productFamily: null, size: 1, unit: 'L', price: 1.20, costPerUnit: null })
+    ])
+    assert.deepEqual(result, [{
+      family: 'Cheese slices',
+      change: 20,
+      startMonth: '2026-01-01',
+      endMonth: '2026-02-01',
+      matchedItems: 3,
+      itemCount: 5
+    }, {
+      family: 'Bread',
+      change: 10,
+      startMonth: '2026-01-01',
+      endMonth: '2026-02-01',
+      matchedItems: 1,
+      itemCount: 1
+    }])
+  })
+})
+
+describe('topSpendingItems and topSpendingFamilies', () => {
+  test('ranks top grocery spending by item and by product family with spend shares', () => {
+    const observations = [
+      row({ item: 'Coffee', productFamily: 'Coffee', category: 'Beverages', price: 15, purchasedOn: '2026-01-05' }),
+      row({ item: 'Coffee', productFamily: 'Coffee', category: 'Beverages', price: 15, purchasedOn: '2026-02-05' }),
+      row({ item: 'Ja! Gouda', productFamily: 'Cheese slices', category: 'Dairy', price: 10, purchasedOn: '2026-01-12' }),
+      row({ item: 'Kerrygold Cheddar', productFamily: 'Cheese slices', category: 'Dairy', price: 10, purchasedOn: '2026-02-12' }),
+      row({ item: 'Brötchen', productFamily: null, category: 'Bakery', price: 0, purchasedOn: '2026-02-15' })
+    ]
+    assert.deepEqual(topSpendingItems(observations, 5), [
+      { name: 'Coffee', productFamily: 'Coffee', category: 'Beverages', purchases: 2, totalSpent: 30, sharePercent: 60, lastPurchasedOn: '2026-02-05' },
+      { name: 'Ja! Gouda', productFamily: 'Cheese slices', category: 'Dairy', purchases: 1, totalSpent: 10, sharePercent: 20, lastPurchasedOn: '2026-01-12' },
+      { name: 'Kerrygold Cheddar', productFamily: 'Cheese slices', category: 'Dairy', purchases: 1, totalSpent: 10, sharePercent: 20, lastPurchasedOn: '2026-02-12' }
+    ])
+    assert.deepEqual(topSpendingFamilies(observations, 5), [
+      { family: 'Coffee', itemCount: 1, purchases: 2, totalSpent: 30, sharePercent: 60, lastPurchasedOn: '2026-02-05' },
+      { family: 'Cheese slices', itemCount: 2, purchases: 2, totalSpent: 20, sharePercent: 40, lastPurchasedOn: '2026-02-12' }
+    ])
+    assert.deepEqual(topSpendingItems([]), [])
+    assert.deepEqual(topSpendingFamilies([]), [])
   })
 })
 

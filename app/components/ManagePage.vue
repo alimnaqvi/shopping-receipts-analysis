@@ -20,7 +20,7 @@ type Entry = {
 type ImportResult = { imported: number, skipped: number, errors: string[] }
 type Store = { id: string, name: string, uses: number }
 type ManagedCategory = { id: string, name: string, itemCount: number, entryCount: number }
-type ItemVariant = { name: string, uses: number, lastUsed: string, category?: string | null }
+type ItemVariant = { name: string, uses: number, lastUsed: string, category?: string | null, productFamily?: string | null }
 type ItemDuplicateGroup = { id: string, variants: ItemVariant[], preferredTarget: string, reasons: string[] }
 type ItemReview = { items: ItemVariant[], groups: ItemDuplicateGroup[], hiddenGroups: ItemDuplicateGroup[] }
 type DimensionVariant = { size: string | null, unit: string | null, uses: number }
@@ -83,6 +83,8 @@ const renameItemSource = ref('')
 const renameItemTarget = ref('')
 const renameItemCategory = ref<string | null>(null)
 const originalItemCategory = ref<string | null>(null)
+const renameItemFamily = ref<string | null>(null)
+const originalItemFamily = ref<string | null>(null)
 const itemRenameBusy = ref(false)
 const itemDimensions = ref<DimensionVariant[]>([])
 const itemDimensionsPending = ref(false)
@@ -128,6 +130,14 @@ const uncategorizedItems = computed(() => (duplicateItems.value?.items || [])
   .filter(item => !item.category)
   .sort((first, second) => second.uses - first.uses || (second.lastUsed || '').localeCompare(first.lastUsed || '') || first.name.localeCompare(second.name)))
 const visibleUncategorizedItems = computed(() => uncategorizedItems.value.slice(0, visibleUncategorizedCount.value))
+const existingFamilies = computed(() => {
+  const seen = new Map<string, string>()
+  for (const item of duplicateItems.value?.items || []) {
+    const family = item.productFamily?.trim()
+    if (family && !seen.has(family.toLowerCase())) seen.set(family.toLowerCase(), family)
+  }
+  return [...seen.values()].sort((first, second) => first.localeCompare(second))
+})
 const renameItemOptions = computed(() => (duplicateItems.value?.items || []).map(item => ({
   label: item.name,
   description: `${item.uses} ${item.uses === 1 ? 'entry' : 'entries'}`,
@@ -157,12 +167,15 @@ const packageUpdateCount = computed(() => {
 })
 const nameWillChange = computed(() => Boolean(renameItemSource.value && renameItemTarget.value.trim() !== renameItemSource.value))
 const categoryWillChange = computed(() => renameItemCategory.value !== originalItemCategory.value)
+const familyWillChange = computed(() => (renameItemFamily.value?.trim() || null) !== (originalItemFamily.value?.trim() || null))
 const packageWillChange = computed(() => editPackageDetails.value && Boolean(dimensionScope.value && Number(replacementSize.value) > 0 && replacementUnit.value.trim() && packageUpdateCount.value))
 const itemEditButtonLabel = computed(() => {
+  if (familyWillChange.value && (nameWillChange.value || categoryWillChange.value || packageWillChange.value)) return 'Apply item changes'
   if (nameWillChange.value && categoryWillChange.value && packageWillChange.value) return 'Apply item changes'
   if (nameWillChange.value && categoryWillChange.value) return `Rename and recategorize ${selectedItemUses.value} ${selectedItemUses.value === 1 ? 'entry' : 'entries'}`
   if (categoryWillChange.value && packageWillChange.value) return 'Update category and package details'
   if (categoryWillChange.value) return `Update category for ${selectedItemUses.value} ${selectedItemUses.value === 1 ? 'entry' : 'entries'}`
+  if (familyWillChange.value) return `Update product family for ${selectedItemUses.value} ${selectedItemUses.value === 1 ? 'entry' : 'entries'}`
   if (nameWillChange.value && packageWillChange.value) return `Rename ${selectedItemUses.value} and update ${packageUpdateCount.value} entries`
   if (nameWillChange.value) return `Rename ${selectedItemUses.value} ${selectedItemUses.value === 1 ? 'entry' : 'entries'}`
   if (packageWillChange.value) return `Update ${packageUpdateCount.value} ${packageUpdateCount.value === 1 ? 'entry' : 'entries'}`
@@ -457,6 +470,8 @@ watch(renameItemSource, async (source) => {
   const item = duplicateItems.value?.items.find(candidate => candidate.name === source)
   originalItemCategory.value = item?.category ?? null
   renameItemCategory.value = originalItemCategory.value
+  originalItemFamily.value = item?.productFamily ?? null
+  renameItemFamily.value = originalItemFamily.value
   itemDimensions.value = []
   editPackageDetails.value = false
   dimensionScope.value = ''
@@ -483,11 +498,12 @@ watch(selectedDimensionVariant, (variant) => {
 async function renameItem() {
   const source = renameItemSource.value
   const target = renameItemTarget.value.trim()
-  if (!source || !target || (!nameWillChange.value && !categoryWillChange.value && !packageWillChange.value)) return
+  if (!source || !target || (!nameWillChange.value && !categoryWillChange.value && !familyWillChange.value && !packageWillChange.value)) return
   const uses = duplicateItems.value?.items.find(item => item.name === source)?.uses || 0
   const changes = [
     nameWillChange.value ? `rename all ${uses} ${uses === 1 ? 'instance' : 'instances'} of “${source}” to “${target}”` : '',
     categoryWillChange.value ? `set the category for all purchases of “${target}” to “${renameItemCategory.value || 'Uncategorized'}”` : '',
+    familyWillChange.value ? `set the product family for all purchases of “${target}” to “${renameItemFamily.value || 'No family'}”` : '',
     packageWillChange.value ? `change ${packageUpdateCount.value} matching ${packageUpdateCount.value === 1 ? 'entry' : 'entries'} to ${replacementSize.value} ${replacementUnit.value.trim()}` : ''
   ].filter(Boolean).join(' and ')
   requestConfirmation({
@@ -513,12 +529,21 @@ async function renameItemConfirmed(source: string, target: string, category?: st
       unit: replacementUnit.value
     } : undefined
     const categoryChange = category === undefined ? (categoryWillChange.value ? renameItemCategory.value : undefined) : category
-    const result = await $fetch<{ target: string, renamedEntries: number, updatedEntries: number }>(apiUrl('/items/rename'), {
-      method: 'PATCH', body: { source, target, dimensions, ...(categoryChange === undefined ? {} : { category: categoryChange }) }
+    const familyChange = familyWillChange.value ? (renameItemFamily.value?.trim() || null) : undefined
+    const result = await $fetch<{ target: string, renamedEntries: number, updatedEntries: number, familyEntries?: number }>(apiUrl('/items/rename'), {
+      method: 'PATCH',
+      body: {
+        source,
+        target,
+        dimensions,
+        ...(categoryChange === undefined ? {} : { category: categoryChange }),
+        ...(familyChange === undefined ? {} : { productFamily: familyChange })
+      }
     })
     itemMergeNotice.value = [
       result.renamedEntries ? `${result.renamedEntries} ${result.renamedEntries === 1 ? 'entry was' : 'entries were'} renamed to ${result.target}` : '',
       categoryChange !== undefined ? `Category for ${result.target} was set to ${categoryChange || 'Uncategorized'} for all item history` : '',
+      familyChange !== undefined ? `Product family for ${result.target} was set to ${familyChange || 'No family'} for all item history` : '',
       result.updatedEntries ? `${result.updatedEntries} ${result.updatedEntries === 1 ? 'entry was' : 'entries were'} updated to ${replacementSize.value} ${replacementUnit.value.trim()}` : ''
     ].filter(Boolean).join('; ') + '.'
     renameItemSource.value = ''
@@ -874,8 +899,13 @@ async function exportXlsx() {
     <UCard class="mt-4.5 grid grid-cols-[54px_1fr] gap-5 p-[clamp(22px,4vw,34px)] [border:1px_solid_var(--line)] rounded-3xl bg-(--surface) shadow-(--shadow) max-[640.01px]:grid-cols-1" :ui="{ body: 'contents' }">
       <div class="grid size-[50px] place-items-center rounded-[15px] text-2xl text-(--accent-strong) [background:var(--accent-soft)]" aria-hidden="true"><UIcon name="i-lucide-package-search" /></div>
       <div>
-        <h2 class="text-[26px]">Edit item history</h2>
-        <p class="max-w-[620px] text-(--muted) leading-[1.55]">Rename an item, set its category for every historical entry, or update package details for selected entries.</p>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-[26px]">Edit item history</h2>
+            <p class="max-w-[620px] text-(--muted) leading-[1.55]">Rename an item, set its category or product family for every historical entry, or update package details for selected entries.</p>
+          </div>
+          <UButton to="/items/families" label="Compare product families" icon="i-lucide-layers" color="neutral" variant="outline" size="sm" />
+        </div>
 
         <form class="item-history-editor mt-5 grid grid-cols-[repeat(2,minmax(180px,1fr))] items-end gap-3.5 rounded-[14px] p-4 [background:var(--surface-muted)] [border:1px_solid_var(--line)] max-[900.01px]:grid-cols-1" @submit.prevent="renameItem">
           <label class="field relative grid min-w-0 gap-[7px]">
@@ -900,6 +930,18 @@ async function exportXlsx() {
             <span>Category</span>
             <CategoryInput v-model="renameItemCategory" aria-label="Item category" :items="(categories || []).map(category => category.name)" />
             <small class="text-(--muted) text-[12px] leading-[1.4]">Applies to {{ selectedItemUses }} historical {{ selectedItemUses === 1 ? 'entry' : 'entries' }} for this item.</small>
+          </div>
+          <div v-if="renameItemSource" class="field relative grid min-w-0 gap-[7px]">
+            <span>Product family</span>
+            <CategoryInput
+              v-model="renameItemFamily"
+              aria-label="Product family"
+              :items="existingFamilies"
+              placeholder="No family"
+              clear-label="Clear product family"
+              clear-attr="data-family-clear"
+            />
+            <small class="text-(--muted) text-[12px] leading-[1.4]">Groups brands and variants of the same product for price comparison.</small>
           </div>
           <UAlert v-if="renameItemSource && categoriesLoadError" color="warning" variant="soft" icon="i-lucide-circle-alert" description="Existing categories could not be loaded. You can still enter a new category.">
             <template #actions><UButton type="button" label="Retry" color="neutral" variant="outline" size="sm" @click="loadCategories()" /></template>
@@ -943,18 +985,19 @@ async function exportXlsx() {
             </UFormField>
           </div>
 
-          <div v-if="nameWillChange || categoryWillChange || packageWillChange" class="flex gap-2.5 rounded-xl p-[13px_14px] [background:var(--accent-soft)] [border:1px_solid_color-mix(in_srgb,var(--accent),transparent_62%)] col-span-full">
+          <div v-if="nameWillChange || categoryWillChange || familyWillChange || packageWillChange" class="flex gap-2.5 rounded-xl p-[13px_14px] [background:var(--accent-soft)] [border:1px_solid_color-mix(in_srgb,var(--accent),transparent_62%)] col-span-full">
             <UIcon name="i-lucide-list-checks" class="flex-[0_0_auto] w-[19px] h-[19px] mt-[2px] text-(--accent-strong)" />
             <div>
               <strong class="block">Review this change</strong>
               <span v-if="nameWillChange" class="block mt-[3px] text-(--muted) text-[12px] leading-[1.45]">Rename all {{ selectedItemUses }} {{ selectedItemUses === 1 ? 'entry' : 'entries' }} from “{{ renameItemSource }}” to “{{ renameItemTarget.trim() }}”.</span>
               <span v-if="categoryWillChange" class="block mt-[3px] text-(--muted) text-[12px] leading-[1.45]">Set category for all purchases of “{{ renameItemTarget.trim() }}” to {{ renameItemCategory || 'Uncategorized' }}.</span>
+              <span v-if="familyWillChange" class="block mt-[3px] text-(--muted) text-[12px] leading-[1.45]">Set product family for all purchases of “{{ renameItemTarget.trim() }}” to {{ renameItemFamily || 'No family' }}.</span>
               <span v-if="packageWillChange" class="block mt-[3px] text-(--muted) text-[12px] leading-[1.45]">Change {{ packageUpdateCount }} matching {{ packageUpdateCount === 1 ? 'entry' : 'entries' }} to {{ replacementSize }} {{ replacementUnit.trim() }}. Normalized prices will be recalculated.</span>
             </div>
           </div>
 
           <div class="flex justify-end col-span-full">
-            <UButton type="submit" :label="itemEditButtonLabel" icon="i-lucide-pencil" :loading="itemRenameBusy" :disabled="!renameItemSource || !renameItemTarget.trim() || (!nameWillChange && !categoryWillChange && !packageWillChange)" />
+            <UButton type="submit" :label="itemEditButtonLabel" icon="i-lucide-pencil" :loading="itemRenameBusy" :disabled="!renameItemSource || !renameItemTarget.trim() || (!nameWillChange && !categoryWillChange && !familyWillChange && !packageWillChange)" />
           </div>
         </form>
       </div>

@@ -16,6 +16,14 @@ export type AutosaveReceiptLine = {
   saleItem: boolean
   nonGrocery: boolean
   notes: string
+  productFamily?: string | null
+  brand?: string
+  variant?: string
+  quantity?: string
+  regularPrice?: string
+  discount?: string
+  rawDescription?: string
+  purchasedTime?: string
 }
 
 function items(count: number) {
@@ -33,7 +41,20 @@ export function receiptLineIsComplete(line: AutosaveReceiptLine) {
   const price = Number(line.price)
   const size = Number(line.size)
   const validSize = line.size === '' || (Number.isFinite(size) && size > 0)
-  return Boolean(line.item.trim()) && line.price !== '' && Number.isFinite(price) && price >= 0 && validSize
+  const quantity = Number(line.quantity)
+  const validQuantity = !line.quantity || (Number.isFinite(quantity) && quantity > 0)
+  const regularPrice = Number(line.regularPrice)
+  const validRegularPrice = !line.regularPrice || (Number.isFinite(regularPrice) && regularPrice >= 0)
+  const discount = Number(line.discount)
+  const validDiscount = !line.discount || (Number.isFinite(discount) && discount >= 0)
+  return Boolean(line.item.trim())
+    && line.price !== ''
+    && Number.isFinite(price)
+    && price >= 0
+    && validSize
+    && validQuantity
+    && validRegularPrice
+    && validDiscount
 }
 
 export function shouldLoadMatchingReceipt(currentReceiptId: string | null, enteredLineCount: number) {
@@ -54,6 +75,15 @@ export function receiptLineSaveSnapshot(
     unit: line.unit,
     saleItem: line.saleItem,
     nonGrocery: line.nonGrocery,
-    notes: line.notes
+    notes: line.notes,
+    ...(line.productFamily === undefined ? {} : { productFamily: line.productFamily || null }),
+    ...(line.brand === undefined ? {} : { brand: line.brand.trim() }),
+    ...(line.variant === undefined ? {} : { variant: line.variant.trim() }),
+    ...(line.quantity === undefined ? {} : { quantity: line.quantity.trim() }),
+    ...(line.regularPrice === undefined ? {} : { regularPrice: line.regularPrice.trim() }),
+    ...(line.discount === undefined ? {} : { discount: line.discount.trim() }),
+    ...(line.rawDescription === undefined ? {} : { rawDescription: line.rawDescription.trim() }),
+    ...(line.purchasedTime === undefined ? {} : { purchasedTime: line.purchasedTime.trim() })
   })
 }
+

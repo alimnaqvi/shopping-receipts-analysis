@@ -1,11 +1,17 @@
 import { db } from '../../utils/db'
 import { normalizeUnit } from '../../../shared/utils/units'
-import { renameItemVariants, updateItemDimensions, type ItemDimensionUpdate } from '../../utils/item-query'
+import { renameItemVariants, updateItemDimensions, updateItemProductFamily, type ItemDimensionUpdate } from '../../utils/item-query'
 import { normalizeCategory } from '../../../shared/utils/category'
 import { lockItemWrites } from '../../utils/category-query'
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ source?: unknown, target?: unknown, dimensions?: Record<string, unknown>, category?: unknown }>(event)
+  const body = await readBody<{
+    source?: unknown
+    target?: unknown
+    dimensions?: Record<string, unknown>
+    category?: unknown
+    productFamily?: unknown
+  }>(event)
   const source = typeof body.source === 'string' ? body.source.trim() : ''
   const target = typeof body.target === 'string' ? body.target.trim() : ''
   if (!source) throw createError({ statusCode: 400, statusMessage: 'Choose an item to rename' })
@@ -16,6 +22,18 @@ export default defineEventHandler(async (event) => {
     category = normalizeCategory(body.category)
   } catch (error) {
     throw createError({ statusCode: 400, statusMessage: error instanceof Error ? error.message : 'Invalid category' })
+  }
+  let productFamily: string | null | undefined
+  if (body.productFamily !== undefined) {
+    if (body.productFamily === null) {
+      productFamily = null
+    } else if (typeof body.productFamily === 'string') {
+      const trimmed = body.productFamily.trim()
+      if (trimmed.length > 100) throw createError({ statusCode: 400, statusMessage: 'Product family must be 100 characters or fewer' })
+      productFamily = trimmed || null
+    } else {
+      throw createError({ statusCode: 400, statusMessage: 'Invalid product family' })
+    }
   }
 
   let dimensions: ItemDimensionUpdate | null = null
@@ -33,7 +51,9 @@ export default defineEventHandler(async (event) => {
     }
     dimensions = { scope: scope as ItemDimensionUpdate['scope'], size, unit, matchSize, matchUnit }
   }
-  if (source === target && !dimensions && category === undefined) throw createError({ statusCode: 400, statusMessage: 'Choose a name or package change' })
+  if (source === target && !dimensions && category === undefined && productFamily === undefined) {
+    throw createError({ statusCode: 400, statusMessage: 'Choose a name or package change' })
+  }
 
   const sql = db()
   return sql.begin(async (tx) => {
@@ -45,6 +65,8 @@ export default defineEventHandler(async (event) => {
     const updatedEntries = dimensions ? await updateItemDimensions(tx, source, dimensions) : 0
     if (dimensions && !updatedEntries) throw createError({ statusCode: 409, statusMessage: 'No entries still match that package selection' })
     const renamedEntries = source === target && category === undefined ? 0 : await renameItemVariants(tx, target, source === target ? [] : [source], category)
-    return { source, target, renamedEntries, updatedEntries }
+    const familyEntries = productFamily === undefined ? 0 : await updateItemProductFamily(tx, target, productFamily)
+    return { source, target, renamedEntries, updatedEntries, familyEntries }
   })
 })
+

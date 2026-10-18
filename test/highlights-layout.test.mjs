@@ -152,3 +152,15 @@ test('shrinkflation defaults to impact order and supports sorting every visible 
   assert.match(page, /class="shrinkflation-impact flex items-center justify-end gap-2 whitespace-nowrap[^"]*"/)
   assert.match(stylesheet, /\.shrinkflation-impact > strong, \.shrinkflation-impact > span \{ white-space: nowrap; \}/)
 })
+
+test('Highlights surfaces product family price movement and top grocery spending by item and family', () => {
+  assert.match(page, /Product family price movement/)
+  assert.match(page, /data\.familyPriceChanges\.slice\(0, 5\)/)
+  assert.match(page, /Top grocery spending/)
+  assert.match(page, /Top items by spend/)
+  assert.match(page, /Top product families by spend/)
+  assert.match(endpoint, /sale_item, category, product_family/)
+  assert.match(endpoint, /familyPriceChanges: familyPriceChanges\(reportObservations\)/)
+  assert.match(endpoint, /topSpendingItems: topSpendingItems\(reportObservations, 10\)/)
+  assert.match(endpoint, /topSpendingFamilies: topSpendingFamilies\(reportObservations, 10\)/)
+})

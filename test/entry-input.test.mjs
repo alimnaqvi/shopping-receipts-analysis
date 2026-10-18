@@ -121,4 +121,73 @@ describe('normalizeEntry', () => {
   test('accepts free items', () => {
     assert.equal(normalizeEntry({ ...validEntry, price: 0 }).price, 0)
   })
+
+  test('normalizes optional product metadata fields when provided and omits them when undefined', () => {
+    const entry = normalizeEntry({
+      ...validEntry,
+      productFamily: '  Cheese slices ',
+      brand: '  Milbona ',
+      variant: '  Gouda ',
+      rawDescription: '  MILBONA GOUDA 400G ',
+      quantity: '2',
+      regularPrice: '5.50',
+      discount: '1.00',
+      purchasedTime: '14:35:20'
+    })
+    assert.equal(entry.productFamily, 'Cheese slices')
+    assert.equal(entry.brand, 'Milbona')
+    assert.equal(entry.variant, 'Gouda')
+    assert.equal(entry.rawDescription, 'MILBONA GOUDA 400G')
+    assert.equal(entry.quantity, 2)
+    assert.equal(entry.regularPrice, 5.5)
+    assert.equal(entry.discount, 1)
+    assert.equal(entry.purchasedTime, '14:35')
+
+    const aliasedFamily = normalizeEntry({ ...validEntry, family: ' Milk ' })
+    assert.equal(aliasedFamily.productFamily, 'Milk')
+
+    const cleared = normalizeEntry({
+      ...validEntry,
+      productFamily: '   ',
+      brand: null,
+      variant: '',
+      rawDescription: '',
+      quantity: '',
+      regularPrice: null,
+      discount: '',
+      purchasedTime: ''
+    })
+    assert.equal(cleared.productFamily, null)
+    assert.equal(cleared.brand, null)
+    assert.equal(cleared.variant, null)
+    assert.equal(cleared.rawDescription, null)
+    assert.equal(cleared.quantity, null)
+    assert.equal(cleared.regularPrice, null)
+    assert.equal(cleared.discount, null)
+    assert.equal(cleared.purchasedTime, null)
+  })
+
+  test('rejects invalid optional product metadata fields with HTTP 400 errors', () => {
+    const cases = [
+      [{ ...validEntry, category: 'x'.repeat(101) }, 'Category must be 100 characters or fewer'],
+      [{ ...validEntry, productFamily: 123 }, 'Product family must be text'],
+      [{ ...validEntry, productFamily: 'x'.repeat(101) }, 'Product family must be 100 characters or fewer'],
+      [{ ...validEntry, brand: 'x'.repeat(201) }, 'Brand must be 200 characters or fewer'],
+      [{ ...validEntry, variant: 'x'.repeat(201) }, 'Variant must be 200 characters or fewer'],
+      [{ ...validEntry, rawDescription: 'x'.repeat(2001) }, 'Receipt text must be 2000 characters or fewer'],
+      [{ ...validEntry, quantity: 0 }, 'Quantity must be greater than zero'],
+      [{ ...validEntry, quantity: -1 }, 'Quantity must be greater than zero'],
+      [{ ...validEntry, regularPrice: -0.01 }, 'Regular price must be zero or greater'],
+      [{ ...validEntry, discount: -0.01 }, 'Discount must be zero or greater'],
+      [{ ...validEntry, purchasedTime: '25:99' }, 'Receipt time must be HH:mm or HH:mm:ss']
+    ]
+    for (const [input, message] of cases) {
+      assert.throws(
+        () => normalizeEntry(input),
+        error => error.statusCode === 400 && error.statusMessage === message,
+        message
+      )
+    }
+  })
 })
+

@@ -5,7 +5,12 @@ export default defineEventHandler(async () => {
   const sql = db()
   const [items, dismissals] = await Promise.all([
     sql<ItemNameSummary[]>`
-      SELECT entries.item AS name, count(*)::int AS uses, max(entries.purchased_on)::text AS last_used, categories.name AS category
+      SELECT
+        entries.item AS name,
+        count(*)::int AS uses,
+        max(entries.purchased_on)::text AS last_used,
+        categories.name AS category,
+        (array_agg(entries.product_family ORDER BY entries.purchased_on DESC, entries.id DESC) FILTER (WHERE entries.product_family IS NOT NULL))[1] AS product_family
       FROM grocery_entry_details entries
       LEFT JOIN grocery_item_categories mappings ON mappings.item = entries.item
       LEFT JOIN grocery_categories categories ON categories.id = mappings.category_id

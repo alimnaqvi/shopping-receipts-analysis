@@ -34,7 +34,7 @@ const UInputMenu = defineComponent({
         value: props.modelValue,
         onInput: (event: Event) => {
           const value = (event.target as HTMLInputElement).value
-          if (!('data-line-category' in attrs)) emit('update:modelValue', value)
+          if (!('data-line-category' in attrs) && !('data-line-family' in attrs)) emit('update:modelValue', value)
           emit('update:searchTerm', value)
         }
       }),
@@ -899,5 +899,48 @@ describe('receipt item entry interactions', () => {
 
     const csv = await exportedBlob!.text()
     expect(csv.split('\r\n')[1]).toBe('2026-08-10,Coffee,Produce,Test Store,12,oz,4.99,,,false,true,Farmers market')
+  })
+
+  it('shows and edits all product metadata fields even when their saved values are null', async () => {
+    matchingReceipt = receipt()
+    const wrapper = await mountForm('Test Store', 'receipt-1')
+    await wrapper.get('[data-line-details]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-line-family]').exists()).toBe(true)
+    expect(wrapper.find('[data-line-brand]').exists()).toBe(true)
+    expect(wrapper.find('[data-line-variant]').exists()).toBe(true)
+    expect(wrapper.find('[data-line-quantity]').exists()).toBe(true)
+    expect(wrapper.find('[data-line-regular-price]').exists()).toBe(true)
+    expect(wrapper.find('[data-line-discount]').exists()).toBe(true)
+    expect(wrapper.find('[data-line-purchased-time]').exists()).toBe(true)
+    expect(wrapper.find('[data-line-raw-description]').exists()).toBe(true)
+
+    const familyMenu = wrapper.findAllComponents(UInputMenu).find(menu => menu.find('[data-line-family]').exists())!
+    familyMenu.vm.$emit('create', { value: 'Coffee beans' })
+    await wrapper.get('[data-line-brand]').setValue('Lavazza')
+    await wrapper.get('[data-line-variant]').setValue('Crema')
+    await wrapper.get('[data-line-quantity]').setValue('2')
+    await wrapper.get('[data-line-regular-price]').setValue('5.99')
+    await wrapper.get('[data-line-discount]').setValue('1.00')
+    await wrapper.get('[data-line-purchased-time]').setValue('14:25')
+    await wrapper.get('[data-line-raw-description]').setValue('LAVAZZA CREMA 2X')
+    await vi.advanceTimersByTimeAsync(600)
+    await flushPromises()
+
+    expect(entryBodies.at(-1)).toMatchObject({
+      method: 'PUT',
+      body: {
+        productFamily: 'Coffee beans',
+        brand: 'Lavazza',
+        variant: 'Crema',
+        quantity: '2',
+        regularPrice: '5.99',
+        discount: '1.00',
+        purchasedTime: '14:25',
+        rawDescription: 'LAVAZZA CREMA 2X'
+      }
+    })
+    wrapper.unmount()
   })
 })

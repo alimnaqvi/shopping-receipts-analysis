@@ -1,10 +1,14 @@
-import { getAuthMode } from '../../utils/auth-policy'
+import { getAuthMode, isAllowedOidcUser } from '../../utils/auth-policy'
 
 const oidcHandler = defineOAuthOidcEventHandler({
   config: {
     scope: ['openid', 'profile', 'email']
   },
   async onSuccess(event, { user }) {
+    if (!isAllowedOidcUser(user)) {
+      throw createError({ statusCode: 403, statusMessage: 'Forbidden' })
+    }
+
     await setUserSession(event, {
       user: {
         sub: user.sub,

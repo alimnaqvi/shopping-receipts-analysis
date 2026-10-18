@@ -7,6 +7,21 @@ const oidcEnvironmentKeys = [
   'NUXT_OAUTH_OIDC_OPENID_CONFIG'
 ] as const
 
+export function parseAllowedEmails(value: string | undefined): Set<string> {
+  return new Set((value ?? '')
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean))
+}
+
+export function isAllowedOidcUser(
+  user: { email?: unknown; email_verified?: unknown },
+  environment: NodeJS.ProcessEnv = process.env
+): boolean {
+  if (user.email_verified !== true || typeof user.email !== 'string') return false
+  return parseAllowedEmails(environment.ALLOWED_EMAILS).has(user.email.trim().toLowerCase())
+}
+
 export function parseAuthMode(value: string | undefined): ReceiptBoxAuthMode {
   const mode = value?.trim().toLowerCase() || 'disabled'
   if (mode === 'disabled' || mode === 'oidc') return mode

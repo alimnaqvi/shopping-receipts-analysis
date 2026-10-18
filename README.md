@@ -286,7 +286,9 @@ way to restrict sign-in to specific Google accounts without publishing the OAuth
 	authorize the app; Google can show an unverified-app warning. Google documents a
 	lifetime 100-user cap for unapproved sensitive/restricted scopes. This app requests
 	only `openid`, `profile`, and `email`, not Gmail/Drive access. The app does not
-	request offline access or Google API refresh tokens.
+	request offline access or Google API refresh tokens. Test-user access is per Google
+	account; family membership does not grant access. The app also enforces its own
+	server-side email allowlist as an independent restriction.
 3. Under **Clients**, create an OAuth client of type **Web application**. Register
 	this exact authorized redirect URI, substituting your production host:
 	`https://YOUR_HOST/auth/oidc`
@@ -306,10 +308,17 @@ way to restrict sign-in to specific Google accounts without publishing the OAuth
 	NUXT_OAUTH_OIDC_CLIENT_SECRET=<Google client secret>
 	NUXT_OAUTH_OIDC_OPENID_CONFIG=https://accounts.google.com/.well-known/openid-configuration
 	NUXT_OAUTH_OIDC_REDIRECT_URL=https://YOUR_HOST/auth/oidc
+	ALLOWED_EMAILS=user1@gmail.com,user2@gmail.com
 	```
 
 	Generate the session secret locally with `openssl rand -base64 48`. Use the
 	path-prefixed callback URL in both Google and the environment if applicable.
+	`ALLOWED_EMAILS` is a comma-separated list of exact account email addresses; the
+	server requires a verified Google email and rejects every address not on this list
+	with HTTP 403. An empty or missing list denies all sign-ins.
+	When adding this restriction to an existing deployment, rotate
+	`NUXT_SESSION_PASSWORD` once to invalidate sessions issued before the allowlist was
+	enforced; this signs out all users. Keep the new password stable afterward.
 	Keep the same session password across all instances and normal deployments;
 	rotating it signs out existing sessions. For Cloud Run, put the session password,
 	client secret, database URL, and OpenAI key in Secret Manager and grant the
@@ -355,7 +364,9 @@ OIDC answers **who signed in**; the app currently does not partition receipts by
 user. All authenticated accounts on a deployment can read, change, export, and delete
 the same receipt history and uploaded scans. Only the backfill-prompt preference is
 per-user. Google Testing users are allowed into the deployment, not into separate
-private datasets. There is no app-level email allowlist or household role model.
+private datasets. The app grants access only to verified email addresses in `ALLOWED_EMAILS`; Google
+Testing mode should also list those same accounts as test users. There is no household
+role model.
 
 For you and your partner to manage one shared household history, use **one deployment**
 and add both accounts as test users. For private, independent histories, use **two
@@ -382,6 +393,7 @@ The application uses these settings:
 | `NUXT_OAUTH_OIDC_CLIENT_SECRET` | At container start | OIDC relying-party client secret |
 | `NUXT_OAUTH_OIDC_OPENID_CONFIG` | At container start | Full URL of the provider's OpenID configuration document |
 | `NUXT_OAUTH_OIDC_REDIRECT_URL` | At container start | Optional explicit public callback URL; recommended behind a reverse proxy |
+| `ALLOWED_EMAILS` | At container start | Comma-separated allowlist of verified account email addresses; an empty or missing list denies all OIDC sign-ins |
 | `APP_PORT` | At container start | Host loopback port used to reach the app server |
 | `NUXT_APP_BASE_URL` | At image build | Public path where the app is mounted; must start and end with `/` |
 | `NUXT_PUBLIC_API_BASE` | At image build | URL used by the browser for API requests; may be a path or full URL |

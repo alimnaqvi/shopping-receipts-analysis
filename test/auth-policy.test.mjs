@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
   getAuthMode,
+  isAllowedOidcUser,
   missingOidcEnvironment,
+  parseAllowedEmails,
   parseAuthMode,
   requiresApiAuthentication
 } from '../server/utils/auth-policy.ts'
@@ -48,12 +50,36 @@ describe('missingOidcEnvironment', () => {
       NUXT_SESSION_PASSWORD: 'a secure session password',
       NUXT_OAUTH_OIDC_CLIENT_ID: 'client',
       NUXT_OAUTH_OIDC_CLIENT_SECRET: 'secret',
-      NUXT_OAUTH_OIDC_OPENID_CONFIG: 'https://auth.example.test/.well-known/openid-configuration'
+      NUXT_OAUTH_OIDC_OPENID_CONFIG: 'https://auth.example.test/.well-known/openid-configuration',
+      ALLOWED_EMAILS: 'user1@example.com,user2@example.com'
     }), [])
   })
 
   test('uses the process environment by default', () => {
     assert.ok(Array.isArray(missingOidcEnvironment()))
+  })
+})
+
+describe('OIDC email authorization', () => {
+  test('normalizes configured email addresses', () => {
+    assert.deepEqual([...parseAllowedEmails(' User1@Example.com, ,user2@example.com ')], [
+      'user1@example.com',
+      'user2@example.com'
+    ])
+    assert.deepEqual([...parseAllowedEmails(undefined)], [])
+  })
+
+  test('allows only verified users whose email is explicitly listed', () => {
+    const environment = { ALLOWED_EMAILS: ' User1@example.com, user2@example.com ' }
+    assert.equal(isAllowedOidcUser({ email: 'user1@example.com', email_verified: true }, environment), true)
+    assert.equal(isAllowedOidcUser({ email: 'USER2@example.com', email_verified: true }, environment), true)
+    assert.equal(isAllowedOidcUser({ email: 'user3@example.com', email_verified: true }, environment), false)
+    assert.equal(isAllowedOidcUser({ email: 'user1@example.com', email_verified: false }, environment), false)
+    assert.equal(isAllowedOidcUser({ email: 'user1@example.com', email_verified: 'true' }, environment), false)
+    assert.equal(isAllowedOidcUser({ email_verified: true }, environment), false)
+    assert.equal(isAllowedOidcUser({ email: 123, email_verified: true }, environment), false)
+    assert.equal(isAllowedOidcUser({ email: 'user1@example.com', email_verified: true }, {}), false)
+    assert.equal(isAllowedOidcUser({ email: 'user1@example.com', email_verified: true }, { ALLOWED_EMAILS: ' , ' }), false)
   })
 })
 

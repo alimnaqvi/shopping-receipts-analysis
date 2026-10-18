@@ -11,8 +11,8 @@ per Batch submission. Batch input is limited to 64 MiB of combined source data
 and 100 MiB of encoded request data. Extraction groups are limited in size and
 concurrency by the server.
 
-Configure the server-only provider settings in `.env` or the deployment's secret
-store:
+Configure the server-only provider and optional object storage settings in `.env`
+or the deployment's secret store:
 
 ```dotenv
 OPENAI_API_KEY=...
@@ -20,6 +20,13 @@ RECEIPT_AI_PROVIDER=openai
 RECEIPT_AI_MODEL=gpt-6-luna
 # Optional Responses-compatible endpoint
 # OPENAI_BASE_URL=https://api.openai.com/v1
+
+# Optional S3-compatible object storage (such as Neon Object Storage)
+# AWS_ENDPOINT_URL_S3=https://br-example.storage.c-1.eu-central-1.aws.neon.tech
+# AWS_ACCESS_KEY_ID=nak_live_...
+# AWS_SECRET_ACCESS_KEY=nsk_live_...
+# AWS_REGION=eu-central-1
+# RECEIPT_STORAGE_BUCKET=receipt-uploads
 ```
 
 Only OpenAI is currently implemented. `ReceiptExtractor` is the provider boundary;
@@ -92,6 +99,11 @@ without rounding. Missing time stays unknown; scan timestamps and timezone guess
 are not used. Duplicate warnings show whether a candidate has a matching, different,
 or unknown printed minute. Receipt grouping remains by store and day.
 
-Original page bytes, raw extraction, corrected draft, and approved-entry references
-are retained in PostgreSQL, including after approval or skipping. Database backups
-therefore include sensitive receipt scans and should be protected accordingly.
+When S3-compatible object storage (such as Neon Object Storage) is configured via
+`AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`, original
+page bytes are stored in the private bucket (`RECEIPT_STORAGE_BUCKET`, defaulting
+to `receipt-uploads`) while PostgreSQL retains only the object key, byte size, raw
+extraction, corrected draft, and approved-entry references. Any existing receipt
+bytes stored in PostgreSQL are migrated to object storage automatically on startup.
+When object storage is not configured, original page bytes fall back to PostgreSQL.
+Keep both the database and object storage bucket private and backed up.

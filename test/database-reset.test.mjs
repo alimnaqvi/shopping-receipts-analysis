@@ -42,6 +42,29 @@ describe('resetDatabase', () => {
     ])
   })
 
+  test('deletes stored receipt objects when object storage is configured', async () => {
+    const deleted = []
+    const sql = {
+      async begin(callback) {
+        return callback({
+          async unsafe(query) {
+            if (query.includes('SELECT storage_key')) {
+              return [{ storageKey: 'receipts/a.jpg' }, { storage_key: 'receipts/b.pdf' }, {}]
+            }
+            return []
+          }
+        })
+      }
+    }
+    const store = {
+      bucket: 'receipt-uploads',
+      delete: async keys => { deleted.push(...keys) }
+    }
+
+    await resetDatabase(sql, store)
+    assert.deepEqual(deleted, ['receipts/a.jpg', 'receipts/b.pdf'])
+  })
+
   test('propagates database failures', async () => {
     const failure = new Error('database unavailable')
     const sql = {

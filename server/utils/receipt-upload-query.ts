@@ -7,6 +7,7 @@ import { itemSimilarity, parseExtraction } from './receipt-extraction.ts'
 import { applyCategoryAssignments, categoryAssignments, lockItemWrites } from './category-query.ts'
 import { ensureStore, upsertReceipt } from './receipt-query.ts'
 import type { ReceiptPage } from './receipt-files.ts'
+import { createReceiptObjectStore, receiptStorageKey, type ReceiptObjectStore } from './receipt-storage.ts'
 import { learnProductAlias } from './product-catalog.ts'
 import { compatibleProduct, productTextKey, receiptMinute } from '../../shared/utils/product-identity.ts'
 
@@ -32,33 +33,86 @@ function validatedDraft(value: unknown) {
   }
 }
 
-export async function getUpload(sql: Database, id: string, source = false): Promise<UploadRow> {
-  const [row] = await sql<UploadRow[]>`
+export async function getUpload(
+  sql: Database,
+  id: string,
+  source = false,
+  store: ReceiptObjectStore | null = createReceiptObjectStore()
+): Promise<UploadRow> {
+  const [row] = await sql<(UploadRow & { storageKey?: string | null })[]>`
     SELECT id, filename, page, mime, status, error, model, batch_id, receipt_id::text,
-      extraction, draft, revision, created_at, CASE WHEN ${source} THEN source ELSE NULL END AS bytes
+      extraction, draft, revision, created_at, storage_key, CASE WHEN ${source} THEN source ELSE NULL END AS bytes
     FROM grocery_receipt_uploads WHERE id = ${id}
   `
   if (!row) throw uploadError(404, 'Receipt upload not found')
-  return row
+  const { storageKey, ...upload } = row
+  if (source && !upload.bytes && storageKey) {
+    if (!store) throw uploadError(503, 'Receipt object storage is not configured')
+    try {
+      upload.bytes = await store.get(storageKey)
+    } catch (error) {
+      const statusCode = (error as { statusCode?: number })?.statusCode ?? 502
+      throw uploadError(statusCode, error instanceof Error ? error.message : 'Receipt scan download failed')
+    }
+  }
+  return upload
 }
 
-export async function storeReceiptPages(sql: postgres.Sql, pages: ReceiptPage[]) {
-  return sql.begin(async (tx) => {
-    const result: Array<{ id: string, duplicate: boolean }> = []
-    for (const page of pages) {
-      const [created] = await tx<{ id: string }[]>`
-        INSERT INTO grocery_receipt_uploads (id, source_hash, filename, page, mime, source)
-        VALUES (${randomUUID()}, ${page.hash}, ${page.filename}, ${page.page}, ${page.mime}, ${page.bytes})
-        ON CONFLICT (source_hash) DO NOTHING RETURNING id
-      `
-      if (created) result.push({ id: created.id, duplicate: false })
-      else {
-        const [existing] = await tx<{ id: string }[]>`SELECT id FROM grocery_receipt_uploads WHERE source_hash = ${page.hash}`
-        result.push({ id: existing!.id, duplicate: true })
+export async function storeReceiptPages(
+  sql: postgres.Sql,
+  pages: ReceiptPage[],
+  store: ReceiptObjectStore | null = createReceiptObjectStore()
+) {
+  const uploadedKeys: string[] = []
+  try {
+    return await sql.begin(async (tx) => {
+      const result: Array<{ id: string, duplicate: boolean }> = []
+      for (const page of pages) {
+        const id = randomUUID()
+        const storageKey = store ? receiptStorageKey(id, page.mime) : null
+        const sourceBytes = store ? null : page.bytes
+        const [created] = await tx<{ id: string }[]>`
+          INSERT INTO grocery_receipt_uploads (id, source_hash, filename, page, mime, source, storage_key, source_size)
+          VALUES (${id}, ${page.hash}, ${page.filename}, ${page.page}, ${page.mime}, ${sourceBytes}, ${storageKey}, ${page.bytes.length})
+          ON CONFLICT (source_hash) DO NOTHING RETURNING id
+        `
+        if (created) {
+          if (store && storageKey) {
+            await store.put(storageKey, page.bytes, page.mime)
+            uploadedKeys.push(storageKey)
+          }
+          result.push({ id: created.id, duplicate: false })
+        } else {
+          const [existing] = await tx<{ id: string }[]>`SELECT id FROM grocery_receipt_uploads WHERE source_hash = ${page.hash}`
+          result.push({ id: existing!.id, duplicate: true })
+        }
       }
-    }
-    return result
-  })
+      return result
+    })
+  } catch (error) {
+    if (store && uploadedKeys.length) await store.delete(uploadedKeys).catch(() => undefined)
+    throw error
+  }
+}
+
+export async function migrateUploadsToObjectStorage(
+  sql: Database,
+  store: ReceiptObjectStore | null = createReceiptObjectStore()
+) {
+  if (!store) return 0
+  const rows = await sql<{ id: string, mime: string, bytes: Buffer }[]>`
+    SELECT id, mime, source AS bytes FROM grocery_receipt_uploads WHERE source IS NOT NULL ORDER BY created_at, id
+  `
+  for (const row of rows) {
+    const storageKey = receiptStorageKey(row.id, row.mime)
+    await store.put(storageKey, row.bytes, row.mime)
+    await sql`
+      UPDATE grocery_receipt_uploads
+      SET storage_key = ${storageKey}, source_size = ${row.bytes.length}, source = NULL
+      WHERE id = ${row.id}
+    `
+  }
+  return rows.length
 }
 
 export async function listReceiptUploads(sql: Database, offset: number, archived: boolean) {

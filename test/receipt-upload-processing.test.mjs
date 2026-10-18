@@ -69,13 +69,17 @@ test('persists retryable failures without leaving a successful-looking review dr
 })
 
 test('submits selected receipts together, retains batch identity, and rejects duplicate IDs', async () => {
-  const { sql, queries } = database([[], [{ count: 0 }], [input], [], []])
+  const { sql, queries } = database([[], [{ count: 0 }], [{ id: 'one', filename: 'receipt.jpg', mime: 'image/jpeg', storageKey: 'receipts/one.jpg', bytes: null }], [], []])
+  const store = { bucket: 'receipt-uploads', get: async () => Buffer.from('image') }
   const provider = { model: 'model', submitBatch: async pages => {
     assert.deepEqual(pages, [input])
     return 'batch_one'
   } }
-  assert.deepEqual(await submitReceiptBatch(sql, ['one'], provider), { batchId: 'batch_one' })
+  assert.deepEqual(await submitReceiptBatch(sql, ['one'], provider, store), { batchId: 'batch_one' })
   assert.match(queries.at(-1).query, /status = 'batch'/)
+  const missingStoreDb = database([[], [{ count: 0 }], [{ id: 'one', filename: 'receipt.jpg', mime: 'image/jpeg', storageKey: 'receipts/one.jpg', bytes: null }], []])
+  await assert.rejects(extractReceiptUpload(missingStoreDb.sql, 'one', { model: 'model' }), { statusCode: 502 })
+  assert.match(missingStoreDb.queries.at(-1).query, /status = 'failed'/)
   for (const ids of [[], Array(101).fill('one'), ['one', 'one']]) await assert.rejects(submitReceiptBatch(sql, ids, provider), { statusCode: 400 })
   for (const failure of [new Error('Unavailable'), null]) {
     const failed = database([[], [{ count: 0 }], [input], [], []])

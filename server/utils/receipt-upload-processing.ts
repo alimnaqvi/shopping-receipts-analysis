@@ -1,31 +1,47 @@
 import { randomUUID } from 'node:crypto'
 import type postgres from 'postgres'
 import type { ExtractionInput, ReceiptExtractor } from './receipt-provider.ts'
+import { createReceiptObjectStore, type ReceiptObjectStore } from './receipt-storage.ts'
 import { uploadError } from './receipt-upload-query.ts'
 import { itemCatalog, receiptItemCatalog } from './product-catalog.ts'
 import { applyCatalog } from '../../shared/utils/product-identity.ts'
+
+type ClaimedUpload = Omit<ExtractionInput, 'bytes'> & { storageKey?: string | null, bytes: Buffer | null }
 
 async function claimUploads(sql: postgres.Sql, ids: string[], model: string, token: string) {
   return sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('receipt-box:upload-processing'))`
     const [busy] = await tx<{ count: number, bytes: string }[]>`
       SELECT count(*)::int AS count,
-        (SELECT coalesce(sum(octet_length(source)), 0)::text FROM grocery_receipt_uploads WHERE id = ANY(${ids}::uuid[])) AS bytes
+        (SELECT coalesce(sum(coalesce(source_size, octet_length(source))), 0)::text FROM grocery_receipt_uploads WHERE id = ANY(${ids}::uuid[])) AS bytes
       FROM grocery_receipt_uploads
       WHERE status = 'processing' AND updated_at > now() - interval '10 minutes'
     `
     if (busy!.count >= 3) throw uploadError(429, 'Other receipts are extracting. Try again shortly.')
     if (Number(busy!.bytes) > 64 * 1024 * 1024) throw uploadError(413, 'Select fewer receipts: combined source data is limited to 64 MiB per extraction group')
-    const rows = await tx<ExtractionInput[]>`
+    const rows = await tx<ClaimedUpload[]>`
       UPDATE grocery_receipt_uploads SET status = 'processing', lease_token = ${token},
         model = ${model}, provider = 'openai', error = NULL, updated_at = now()
       WHERE id = ANY(${ids}::uuid[]) AND (status IN ('pending', 'failed')
         OR (status = 'processing' AND updated_at < now() - interval '10 minutes'))
-      RETURNING id, filename, mime, source AS bytes
+      RETURNING id, filename, mime, storage_key, source AS bytes
     `
     if (rows.length !== ids.length) throw uploadError(409, 'Receipts are already processing or no longer pending. Interrupted requests can be retried after 10 minutes.')
     return rows
   })
+}
+
+async function resolveUploadInputs(rows: ClaimedUpload[], store: ReceiptObjectStore | null): Promise<ExtractionInput[]> {
+  const inputs: ExtractionInput[] = []
+  for (const { storageKey, ...row } of rows) {
+    if (row.bytes) {
+      inputs.push({ ...row, bytes: row.bytes })
+      continue
+    }
+    if (!storageKey || !store) throw new Error('Receipt object storage is not configured')
+    inputs.push({ ...row, bytes: await store.get(storageKey) })
+  }
+  return inputs
 }
 
 async function extractionCategories(sql: postgres.Sql) {
@@ -41,10 +57,16 @@ async function failClaim(sql: postgres.Sql, token: string, error: unknown) {
   `
 }
 
-export async function extractReceiptUpload(sql: postgres.Sql, id: string, provider: ReceiptExtractor) {
+export async function extractReceiptUpload(
+  sql: postgres.Sql,
+  id: string,
+  provider: ReceiptExtractor,
+  store: ReceiptObjectStore | null = createReceiptObjectStore()
+) {
   const token = randomUUID()
-  const [input] = await claimUploads(sql, [id], provider.model, token)
+  const claimed = await claimUploads(sql, [id], provider.model, token)
   try {
+    const [input] = await resolveUploadInputs(claimed, store)
     const categories = await extractionCategories(sql)
     const catalog = await itemCatalog(sql)
     const extraction = await provider.extract(input!, categories, catalog)
@@ -61,11 +83,17 @@ export async function extractReceiptUpload(sql: postgres.Sql, id: string, provid
   }
 }
 
-export async function submitReceiptBatch(sql: postgres.Sql, ids: string[], provider: ReceiptExtractor) {
+export async function submitReceiptBatch(
+  sql: postgres.Sql,
+  ids: string[],
+  provider: ReceiptExtractor,
+  store: ReceiptObjectStore | null = createReceiptObjectStore()
+) {
   if (!ids.length || ids.length > 100 || new Set(ids).size !== ids.length) throw uploadError(400, 'Select between 1 and 100 distinct pending receipts')
   const token = randomUUID()
-  const inputs = await claimUploads(sql, ids, provider.model, token)
+  const claimed = await claimUploads(sql, ids, provider.model, token)
   try {
+    const inputs = await resolveUploadInputs(claimed, store)
     const categories = await extractionCategories(sql)
     const batchId = await provider.submitBatch(inputs, categories, await itemCatalog(sql))
     await sql`

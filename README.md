@@ -51,9 +51,10 @@ Receipt extraction is optional. Set `OPENAI_API_KEY` on the server to enable it.
 
 Deploy the provided Docker image to a host that supports a Node.js container,
 HTTPS, persistent PostgreSQL, runtime secrets, and request/response bodies up to
-20 MiB. Receipt originals are stored in PostgreSQL. Back up the database and keep
-it private. Configure OIDC before exposing the service publicly; without OIDC,
-anyone who can reach the app can access its data.
+20 MiB. Receipt originals can be stored in S3-compatible object storage (such as
+Neon Object Storage) with automatic fallback to PostgreSQL. Back up the database
+and object storage and keep them private. Configure OIDC before exposing the
+service publicly; without OIDC, anyone who can reach the app can access its data.
 
 See [deployment and authentication](docs/deployment.md) and
 [receipt upload behavior](docs/receipt-uploads.md).

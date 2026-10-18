@@ -11,10 +11,12 @@ provide:
 - Request and response bodies large enough for the configured 20 MiB receipt files
 - A trusted deployment path for the provided Dockerfile and image
 
-Receipt originals are stored in PostgreSQL rather than the container filesystem.
-The container filesystem can be ephemeral. Keep the database private and back up
-receipt uploads as well as structured purchase data. The app uses one shared
-receipt dataset for every authenticated account; it is not multi-tenant.
+Receipt originals are stored in S3-compatible object storage (such as Neon Object
+Storage) when configured, or in PostgreSQL when object storage is not configured,
+rather than the container filesystem. The container filesystem can be ephemeral.
+Keep the database and object storage bucket private and back up receipt uploads as
+well as structured purchase data. The app uses one shared receipt dataset for every
+authenticated account; it is not multi-tenant.
 
 `NUXT_APP_BASE_URL` and `NUXT_PUBLIC_API_BASE` are build-time settings. Other
 application settings are read at runtime. If using a path prefix, set the same
@@ -89,6 +91,11 @@ describe the provider-side setup and publication requirements.
 | `RECEIPT_AI_PROVIDER` | Runtime | Currently `openai` |
 | `RECEIPT_AI_MODEL` | Runtime | Vision and structured-output model; default `gpt-6-luna` |
 | `OPENAI_BASE_URL` | Runtime | Optional Responses-compatible provider endpoint |
+| `AWS_ENDPOINT_URL_S3` | Runtime | Optional S3-compatible endpoint URL (e.g. Neon Object Storage branch endpoint) |
+| `AWS_ACCESS_KEY_ID` | Runtime | Optional S3 Access Key ID (`token_id` in Neon Object Storage) |
+| `AWS_SECRET_ACCESS_KEY` | Runtime | Optional S3 Secret Access Key (`s3_secret_access_key` in Neon Object Storage) |
+| `AWS_REGION` | Runtime | Optional S3 region; inferred from Neon endpoint URL when omitted |
+| `RECEIPT_STORAGE_BUCKET` | Runtime | Optional S3 bucket name for receipt scans; default `receipt-uploads` |
 | `NUXT_APP_BASE_URL` | Build time | Public app path, starting and ending with `/` |
 | `NUXT_PUBLIC_API_BASE` | Build time | Public API root; defaults under the app path |
 

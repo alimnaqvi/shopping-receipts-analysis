@@ -5,6 +5,7 @@ import { normalizeUnit } from '../../shared/utils/units'
 import { normalizeStoreName, storeNameKey } from '../../shared/utils/store-name'
 import { mergeDuplicateReceipts } from './receipt-query'
 import { seedInitialCategories } from './category-query'
+import { migrateUploadsToObjectStorage } from './receipt-upload-query'
 
 let client: ReturnType<typeof postgres> | undefined
 
@@ -392,7 +393,9 @@ export async function migrate() {
         filename TEXT NOT NULL,
         page INTEGER NOT NULL,
         mime TEXT NOT NULL CHECK (mime IN ('image/jpeg', 'image/png', 'application/pdf')),
-        source BYTEA NOT NULL,
+        source BYTEA,
+        storage_key TEXT,
+        source_size INTEGER,
         status TEXT NOT NULL DEFAULT 'pending'
           CHECK (status IN ('pending', 'processing', 'batch', 'review', 'failed', 'saved', 'discarded')),
         error TEXT,
@@ -408,6 +411,17 @@ export async function migrate() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
+    `
+    await tx`
+      ALTER TABLE grocery_receipt_uploads
+        ALTER COLUMN source DROP NOT NULL,
+        ADD COLUMN IF NOT EXISTS storage_key TEXT,
+        ADD COLUMN IF NOT EXISTS source_size INTEGER
+    `
+    await tx`
+      UPDATE grocery_receipt_uploads
+      SET source_size = octet_length(source)
+      WHERE source_size IS NULL AND source IS NOT NULL
     `
     await tx`CREATE INDEX IF NOT EXISTS grocery_receipt_uploads_queue_idx ON grocery_receipt_uploads (created_at DESC, id)`
     await tx`CREATE INDEX IF NOT EXISTS grocery_receipt_uploads_batch_idx ON grocery_receipt_uploads (batch_id) WHERE batch_id IS NOT NULL`
@@ -451,6 +465,7 @@ export async function migrate() {
     `
     await tx`CREATE INDEX IF NOT EXISTS grocery_entries_family_idx ON grocery_entries (lower(product_family)) WHERE product_family IS NOT NULL`
   })
+  await migrateUploadsToObjectStorage(sql)
 }
 
 export type GroceryEntry = ProductMetadata & {

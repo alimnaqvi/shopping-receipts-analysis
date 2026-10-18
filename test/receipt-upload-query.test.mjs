@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { approveReceiptUpload, approvedReceipt, getUpload, listReceiptUploads, receiptUploadDuplicates, requireUploadId, saveUploadDraft, setUploadDiscarded, storeReceiptPages, uploadError } from '../server/utils/receipt-upload-query.ts'
+import { approveReceiptUpload, approvedReceipt, getUpload, listReceiptUploads, migrateUploadsToObjectStorage, receiptUploadDuplicates, requireUploadId, saveUploadDraft, setUploadDiscarded, storeReceiptPages, uploadError } from '../server/utils/receipt-upload-query.ts'
 
 globalThis.createError = input => Object.assign(new Error(input.statusMessage), input)
 const id = '12345678-1234-4123-8123-123456789abc'
@@ -33,17 +33,76 @@ test('stores new pages and returns exact duplicates without replacing originals 
   assert.equal(queries.length, 3)
 })
 
-test('loads original bytes only on request and paginates summaries without selecting originals', async () => {
-  const { sql, queries } = database([[{ id }], [{ id, bytes: Buffer.from('jpg') }], Array(51).fill({ id }), []])
+test('stores new pages in object storage when configured and cleans up uploaded objects on failure', async () => {
+  const uploaded = []
+  const deleted = []
+  const store = {
+    bucket: 'receipt-uploads',
+    put: async (key, bytes, mime) => { uploaded.push({ key, bytes: bytes.toString(), mime }) },
+    delete: async keys => { deleted.push(...keys); throw new Error('cleanup failed') }
+  }
+  const page = { hash: 'hash', filename: 'receipt.jpg', page: 1, mime: 'image/jpeg', bytes: Buffer.from('jpg') }
+  const { sql, queries } = database([[{ id }], [], [{ id }]])
+  assert.deepEqual(await storeReceiptPages(sql, [page, page], store), [{ id, duplicate: false }, { id, duplicate: true }])
+  assert.equal(uploaded.length, 1)
+  assert.match(uploaded[0].key, /^receipts\/[a-f0-9-]+\.jpg$/)
+  assert.equal(queries[0].values[5], null)
+  assert.equal(queries[0].values[6], uploaded[0].key)
+  assert.equal(queries[0].values[7], 3)
+
+  const failingStore = {
+    ...store,
+    put: async (key) => {
+      if (uploaded.length === 2) throw new Error('S3 write error')
+      uploaded.push({ key })
+    }
+  }
+  const multiDb = database([[{ id }], [{ id: 'second' }]])
+  await assert.rejects(() => storeReceiptPages(multiDb.sql, [page, { ...page, hash: 'hash2', page: 2 }], failingStore), /S3 write error/)
+  assert.equal(deleted.length, 1)
+})
+
+test('loads original bytes from Postgres or object storage and migrates legacy Postgres blobs', async () => {
+  const { sql, queries } = database([
+    [{ id }],
+    [{ id, bytes: Buffer.from('jpg') }],
+    [{ id, storageKey: 'receipts/one.jpg', bytes: null }],
+    [{ id, storageKey: 'receipts/missing-store.jpg', bytes: null }],
+    [{ id, storageKey: 'receipts/broken.jpg', bytes: null }],
+    [{ id, storageKey: 'receipts/non-error.jpg', bytes: null }],
+    Array(51).fill({ id }),
+    [],
+    [],
+    [{ id, mime: 'image/png', bytes: Buffer.from('png-data') }],
+    []
+  ])
+  const migrated = []
+  const store = {
+    bucket: 'receipt-uploads',
+    put: async key => { migrated.push(key) },
+    get: async (key) => {
+      if (key.includes('broken')) throw Object.assign(new Error('Not found'), { statusCode: 404 })
+      if (key.includes('non-error')) throw 'offline'
+      return Buffer.from('from-s3')
+    }
+  }
   assert.equal((await getUpload(sql, id)).id, id)
   assert.equal(queries[0].values[0], false)
   assert.equal((await getUpload(sql, id, true)).bytes.toString(), 'jpg')
+  assert.equal((await getUpload(sql, id, true, store)).bytes.toString(), 'from-s3')
+  await assert.rejects(getUpload(sql, id, true, null), { statusCode: 503 })
+  await assert.rejects(getUpload(sql, id, true, store), { statusCode: 404 })
+  await assert.rejects(getUpload(sql, id, true, store), { statusCode: 502 })
   const result = await listReceiptUploads(sql, 0, false)
   assert.equal(result.uploads.length, 50)
   assert.equal(result.hasMore, true)
-  assert.match(queries[2].query, /NULL AS extraction/)
+  assert.match(queries[6].query, /NULL AS extraction/)
   assert.equal((await listReceiptUploads(sql, 50, true)).hasMore, false)
   await assert.rejects(getUpload(sql, id), { statusCode: 404 })
+  assert.equal(await migrateUploadsToObjectStorage(sql), 0)
+  assert.equal(await migrateUploadsToObjectStorage(sql, store), 1)
+  assert.equal(migrated.length, 1)
+  assert.match(queries.at(-1).query, /SET storage_key = \?, source_size = \?, source = NULL/)
 })
 
 test('finds same-day same-store receipts and overlapping items across stores and pending drafts', async () => {

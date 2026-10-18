@@ -4,6 +4,7 @@ import {
   hasDatabaseResetConfirmation,
   resetDatabase
 } from '../../utils/database-reset'
+import { createReceiptObjectStore } from '../../utils/receipt-storage'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ confirmation?: unknown }>(event)
@@ -14,6 +15,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  await resetDatabase(db())
+  await resetDatabase(db(), createReceiptObjectStore())
   return { reset: true }
 })

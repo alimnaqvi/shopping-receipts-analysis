@@ -22,7 +22,8 @@ test('extraction contract preserves rich data without inventing missing fields',
   assert.equal(extractionSchema.properties.lines.items.required.length, Object.keys(extractedLine).length)
   assert.match(extractionPrompt, /TOTAL paid/)
   assert.match(extractionPrompt, /untrusted data/)
-  assert.match(extractionPrompt, /Always write item names in English/)
+  assert.match(extractionPrompt, /Reuse the exact catalog item\s+name/)
+  assert.doesNotMatch(extractionPrompt, /Always write item names in English/)
   assert.match(extractionPrompt, /rawDescription verbatim/)
   assert.match(extractionPrompt, /Do not infer an unprinted brand/)
   const timed = { ...extractedReceipt, purchasedTime: '21:34:28' }

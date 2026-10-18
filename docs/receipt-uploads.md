@@ -61,8 +61,8 @@ approved.
 
 ## Product Identity
 
-Extraction requests English item names and preserves the original receipt text.
-Requests include a bounded catalog of existing item names, families, brands,
+Extraction reuses matching catalog item names and preserves the original receipt
+text. Requests include a bounded catalog of existing item names, families, brands,
 variants, categories, and approved store-specific aliases. After extraction, a
 targeted lookup checks approved aliases for the receipt's store and raw line text,
 including aliases outside the model-context limit.

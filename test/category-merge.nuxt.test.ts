@@ -235,3 +235,49 @@ it('clears an item category for all of its historical entries', async () => {
   await vi.waitFor(() => expect(wrapper.text()).toContain('Category for Soy milk was set to Uncategorized for all item history'))
   wrapper.unmount()
 })
+
+it('lists uncategorized items ordered by purchase history and assigns categories directly', async () => {
+  let duplicateItemList = [
+    { name: 'Soy milk', uses: 5, lastUsed: '2026-10-15', category: 'Dairy' },
+    { name: 'Rye bread', uses: 1, lastUsed: '2026-10-10', category: null },
+    { name: 'Brötchen', uses: 4, lastUsed: '2026-10-16', category: null },
+    { name: 'Apfelsaft', uses: 1, lastUsed: '2026-10-12', category: null }
+  ]
+  registerEndpoint('/api/items/duplicates', () => ({ items: duplicateItemList, groups: [], hiddenGroups: [] }))
+
+  const wrapper = await mountSuspended(ManagePage, {
+    route: '/data/items',
+    global: { stubs: { UCard: Slot, UFormField: Slot, UButton: Button, USelectMenu: Select, UInput: Input, UModal: Modal, UIcon: true, UCheckbox: true, CategoryInput } }
+  })
+  await flushPromises()
+
+  expect(wrapper.text()).toContain('Showing 3 of 3 uncategorized items, ordered by purchase history.')
+  const rows = wrapper.findAll('ul[aria-label="Uncategorized items"] li')
+  expect(rows.map(row => row.find('strong').text())).toEqual(['Brötchen', 'Apfelsaft', 'Rye bread'])
+
+  await wrapper.get('select[placeholder="Choose an item"]').setValue('Brötchen')
+  await flushPromises()
+  expect((wrapper.get('select[aria-label="Item category"]').element as HTMLSelectElement).value).toBe('')
+
+  duplicateItemList = duplicateItemList.map(item => item.name === 'Brötchen' ? { ...item, category: 'Bakery' } : item)
+  await wrapper.get('select[aria-label="Category for Brötchen"]').setValue('Dairy')
+  await flushPromises()
+
+  expect(requests[0]).toMatchObject({ source: 'Brötchen', target: 'Brötchen', category: 'Dairy' })
+  await vi.waitFor(() => expect(wrapper.text()).toContain('Category for Brötchen was set to Dairy across 4 entries.'))
+  expect((wrapper.get('select[aria-label="Item category"]').element as HTMLSelectElement).value).toBe('Dairy')
+  expect(wrapper.findAll('ul[aria-label="Uncategorized items"] li')).toHaveLength(2)
+
+  failResolution = true
+  await wrapper.get('select[aria-label="Category for Apfelsaft"]').setValue('Beverages')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Could not save category')
+
+  duplicateItemList = duplicateItemList.map(item => ({ ...item, category: 'Dairy' }))
+  failResolution = false
+  await wrapper.get('select[aria-label="Category for Rye bread"]').setValue('Dairy')
+  await flushPromises()
+  await vi.waitFor(() => expect(wrapper.text()).toContain('No uncategorized items'))
+  wrapper.unmount()
+})
+

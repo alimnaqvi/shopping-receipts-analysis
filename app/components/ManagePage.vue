@@ -92,6 +92,10 @@ const dimensionVariant = ref('')
 const replacementSize = ref('')
 const replacementUnit = ref('')
 const visibleItemGroupCount = ref(30)
+const visibleUncategorizedCount = ref(30)
+const uncategorizedBusyItem = ref<string | null>(null)
+const uncategorizedError = ref('')
+const uncategorizedNotice = ref('')
 const resetConfirmation = ref('')
 const resetConfirming = ref(false)
 const resetBusy = ref(false)
@@ -120,6 +124,10 @@ async function resolveCategoryConflict() {
 }
 const visibleDuplicateItemGroups = computed(() => (duplicateItems.value?.groups || []).slice(0, visibleItemGroupCount.value))
 const displayedHiddenItemGroups = computed(() => showHiddenItemGroups.value ? (duplicateItems.value?.hiddenGroups || []) : [])
+const uncategorizedItems = computed(() => (duplicateItems.value?.items || [])
+  .filter(item => !item.category)
+  .sort((first, second) => second.uses - first.uses || (second.lastUsed || '').localeCompare(first.lastUsed || '') || first.name.localeCompare(second.name)))
+const visibleUncategorizedItems = computed(() => uncategorizedItems.value.slice(0, visibleUncategorizedCount.value))
 const renameItemOptions = computed(() => (duplicateItems.value?.items || []).map(item => ({
   label: item.name,
   description: `${item.uses} ${item.uses === 1 ? 'entry' : 'entries'}`,
@@ -525,6 +533,30 @@ async function renameItemConfirmed(source: string, target: string, category?: st
   }
 }
 
+async function assignUncategorizedCategory(item: ItemVariant, category: string) {
+  const trimmed = category.trim()
+  if (!trimmed || uncategorizedBusyItem.value) return
+  uncategorizedBusyItem.value = item.name
+  uncategorizedError.value = ''
+  uncategorizedNotice.value = ''
+  try {
+    await $fetch(apiUrl('/items/rename'), {
+      method: 'PATCH',
+      body: { source: item.name, target: item.name, category: trimmed }
+    })
+    uncategorizedNotice.value = `Category for ${item.name} was set to ${trimmed} across ${item.uses} ${item.uses === 1 ? 'entry' : 'entries'}.`
+    if (renameItemSource.value === item.name) {
+      originalItemCategory.value = trimmed
+      renameItemCategory.value = trimmed
+    }
+    await Promise.all([refreshDuplicateItems(), refreshCategories()])
+  } catch (error: any) {
+    uncategorizedError.value = storeErrorMessage(error, 'Could not assign the category')
+  } finally {
+    uncategorizedBusyItem.value = null
+  }
+}
+
 function beginDatabaseReset() {
   resetConfirmation.value = ''
   resetError.value = ''
@@ -857,7 +889,6 @@ async function exportXlsx() {
               placeholder="Choose an item"
               :search-input="{ placeholder: 'Search items…' }"
               virtualize
-              size="xl"
             />
           </label>
           <label class="field relative grid min-w-0 gap-[7px]">
@@ -889,7 +920,6 @@ async function exportXlsx() {
                 description-key="description"
                 placeholder="Choose which entries to update"
                 :loading="itemDimensionsPending"
-                size="xl"
               />
             </label>
             <label v-if="dimensionScope === 'variant'" class="field relative grid min-w-0 gap-[7px]">
@@ -902,7 +932,6 @@ async function exportXlsx() {
                 description-key="description"
                 placeholder="Choose quantity and unit"
                 :loading="itemDimensionsPending"
-                size="xl"
               />
             </label>
             <label class="field relative grid min-w-0 gap-[7px]">
@@ -928,6 +957,58 @@ async function exportXlsx() {
             <UButton type="submit" :label="itemEditButtonLabel" icon="i-lucide-pencil" :loading="itemRenameBusy" :disabled="!renameItemSource || !renameItemTarget.trim() || (!nameWillChange && !categoryWillChange && !packageWillChange)" />
           </div>
         </form>
+      </div>
+    </UCard>
+
+    <UCard class="mt-4.5 grid grid-cols-[54px_1fr] gap-5 p-[clamp(22px,4vw,34px)] [border:1px_solid_var(--line)] rounded-3xl bg-(--surface) shadow-(--shadow) max-[640.01px]:grid-cols-1" :ui="{ body: 'contents' }">
+      <div class="grid size-[50px] place-items-center rounded-[15px] text-2xl text-(--accent-strong) [background:var(--accent-soft)]" aria-hidden="true"><UIcon name="i-lucide-tag" /></div>
+      <div>
+        <h2 class="text-[26px]">Uncategorized items</h2>
+        <p class="max-w-[620px] text-(--muted) leading-[1.55]">Assign a category to items that do not have one yet. Each category applies to all historical purchases of that item.</p>
+
+        <UAlert v-if="uncategorizedError" color="error" variant="soft" icon="i-lucide-circle-alert" :description="uncategorizedError" class="notice m-[15px_0_0] rounded-[10px] p-[11px_13px] text-sm" />
+        <UAlert v-if="uncategorizedNotice" color="success" variant="soft" icon="i-lucide-circle-check" :description="uncategorizedNotice" class="notice m-[15px_0_0] rounded-[10px] p-[11px_13px] text-sm" />
+        <UAlert v-if="duplicateItemsLoadError" color="error" variant="soft" icon="i-lucide-circle-alert" description="Could not load uncategorized items." class="notice m-[15px_0_0] rounded-[10px] p-[11px_13px] text-sm">
+          <template #actions><UButton type="button" label="Try again" color="neutral" variant="outline" size="sm" @click="loadDuplicateItems()" /></template>
+        </UAlert>
+
+        <div v-if="duplicateItemsPending" class="mt-4.5 flex min-h-[110px] items-center gap-[9px] text-(--muted)"><UIcon name="i-lucide-loader-circle" class="animate-spin [animation-duration:.9s] w-[20px] h-[20px] text-(--accent)" /><span>Loading uncategorized items…</span></div>
+        <div v-else-if="!duplicateItemsLoadError && !uncategorizedItems.length" class="mt-4.5 flex min-h-24 items-center gap-[13px] rounded-[14px] p-4.5 text-(--muted) [border:1px_dashed_var(--line)]">
+          <UIcon name="i-lucide-circle-check-big" class="w-[32px] h-[32px] text-(--accent)" />
+          <div><strong class="block">No uncategorized items</strong><span class="block mt-[3px] text-[13px]">Every item in your purchase history has a category.</span></div>
+        </div>
+        <template v-else-if="!duplicateItemsLoadError">
+          <p class="mt-4.5 -mb-2 text-[12px] max-w-[620px] text-(--muted) leading-[1.55]">Showing {{ visibleUncategorizedItems.length }} of {{ uncategorizedItems.length }} uncategorized {{ uncategorizedItems.length === 1 ? 'item' : 'items' }}, ordered by purchase history.</p>
+          <ul aria-label="Uncategorized items" class="store-list m-[18px_0_0] list-none rounded-[14px] p-0 [border:1px_solid_var(--line)]">
+            <li v-for="item in visibleUncategorizedItems" :key="item.name" class="flex items-center justify-between gap-[14px] min-h-[62px] p-[10px_12px_10px_16px] [border-top:1px_solid_var(--line)] max-[640.01px]:flex-col max-[640.01px]:items-stretch">
+              <div class="store-name min-w-0">
+                <NuxtLink :to="itemPath(item.name)" class="item-history-link inline-flex max-w-full items-center gap-[7px] text-inherit no-underline" :aria-label="`View normalized price history for ${item.name}`">
+                  <strong class="truncate">{{ item.name }}</strong><UIcon name="i-lucide-chart-line" aria-hidden="true" />
+                </NuxtLink>
+                <span class="block mt-[3px] text-(--muted) text-[12px]">{{ item.uses.toLocaleString() }} {{ item.uses === 1 ? 'entry' : 'entries' }}<template v-if="item.lastUsed">, last used {{ item.lastUsed }}</template></span>
+              </div>
+              <div class="w-[240px] shrink-0 max-[640.01px]:w-full">
+                <CategoryInput
+                  :model-value="null"
+                  :items="(categories || []).map(category => category.name)"
+                  :aria-label="`Category for ${item.name}`"
+                  :disabled="uncategorizedBusyItem !== null"
+                  @update:model-value="category => category && assignUncategorizedCategory(item, category)"
+                />
+              </div>
+            </li>
+          </ul>
+          <UButton
+            v-if="visibleUncategorizedItems.length < uncategorizedItems.length"
+            class="mt-4 w-full justify-center"
+            type="button"
+            label="Show 30 more"
+            icon="i-lucide-chevron-down"
+            color="neutral"
+            variant="outline"
+            @click="visibleUncategorizedCount += 30"
+          />
+        </template>
       </div>
     </UCard>
 

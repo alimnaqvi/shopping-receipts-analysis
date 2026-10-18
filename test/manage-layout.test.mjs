@@ -5,6 +5,7 @@ import test from 'node:test'
 const managePage = await readFile(new URL('../app/components/ManagePage.vue', import.meta.url), 'utf8')
 const manageRoute = await readFile(new URL('../app/pages/data/[section].vue', import.meta.url), 'utf8')
 const manageMiddleware = await readFile(new URL('../app/middleware/manage.ts', import.meta.url), 'utf8')
+const appConfig = await readFile(new URL('../app/app.config.ts', import.meta.url), 'utf8')
 
 test('the Manage section uses the standard desktop content width', () => {
   assert.match(managePage, /<div class="mx-auto w-full max-w-300">/)
@@ -16,9 +17,12 @@ test('spreadsheet import copy lists the supported template and export formats', 
   assert.doesNotMatch(managePage, /Numbers/)
 })
 
-test('the Manage section exposes a duplicate item review editor', () => {
+test('the Manage section exposes a duplicate item review editor and uncategorized items card', () => {
   assert.match(managePage, /label="Items"/)
   assert.match(managePage, /<h2[^>]*>Edit item history<\/h2>/)
+  assert.match(managePage, /<h2[^>]*>Uncategorized items<\/h2>/)
+  assert.match(managePage, /No uncategorized items/)
+  assert.match(managePage, /aria-label="Uncategorized items"/)
   assert.match(managePage, /label="Merge variants"/)
   assert.match(managePage, /label="Hide suggestion"/)
   assert.match(managePage, /label="Unhide"/)
@@ -39,6 +43,8 @@ test('the Manage section exposes a duplicate item review editor', () => {
   assert.match(managePage, /class="[^"]*item-duplicate-list[^"]*"/)
   assert.match(managePage, /class="[^"]*item-history-editor[^"]*"/)
   assert.match(managePage, /class="[^"]*item-package-editor[^"]*"/)
+  assert.match(appConfig, /max-h-\[min\(28rem,var\(--reka-combobox-content-available-height,28rem\)\)\]/)
+  assert.match(appConfig, /max-h-\[min\(28rem,var\(--reka-select-content-available-height,28rem\)\)\]/)
 })
 
 test('duplicate item suggestions load only after opening Items', () => {
